@@ -108,12 +108,12 @@ async def ChatGPTbot():
         last_update = f.read()
     # Check for new messages in Telegram group
     url = f'https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset={last_update}'
-    print('ChatGPTbot sending request')
+    # print('ChatGPTbot sending request')
     try:
         response = requests.get(url, timeout=10)
     except Exception as e:
         print("Error in get updates", e)
-    print("ChatGPTbot got the response", response)
+    # print("ChatGPTbot got the response", response)
     data = json.loads(response.content)
     # print("Printing the data", data)
     
