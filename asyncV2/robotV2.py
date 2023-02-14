@@ -7,7 +7,7 @@ import memory
 import asyncio
 
 # OpenAI secret Key
-API_KEY = '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'
+API_KEY = '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'
 # Models: text-davinci-003,text-curie-001,text-babbage-001,text-ada-001
 MODEL = 'text-davinci-003'
 # Telegram secret access bot token
