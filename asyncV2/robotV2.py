@@ -5,21 +5,27 @@ import re
 import random
 import memory
 import asyncio
+import os
 
 # OpenAI secret Key
-API_KEY = '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'
+# API_KEY = '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'
+API_KEY = os.environ['API_KEY']
 # Models: text-davinci-003,text-curie-001,text-babbage-001,text-ada-001
 MODEL = 'text-davinci-003'
 # Telegram secret access bot token
-BOT_TOKEN = '6041036556:AAEBx27w2n1e6jXbR-DmjzE0cB36_shrkXg'
+# BOT_TOKEN = '6041036556:AAEBx27w2n1e6jXbR-DmjzE0cB36_shrkXg'
+BOT_TOKEN = os.environ['BOT_TOKEN']
 # Specify all group ID the bot can respond too
-ALLOWED_GROUP_ID = ['-1001840466359', '-1001840466359']  # General, Book 1 message_thread_id=2
+# ALLOWED_GROUP_ID = ['-1001840466359', '-1001840466359']  # General, Book 1 message_thread_id=2
+ALLOWED_GROUP_ID = os.environ['ALLOWED_GROUP_ID']
 # Specify your Chat Bot handle
-CHATBOT_HANDLE = '@biblionarium_chatgpt_bot'
+# CHATBOT_HANDLE = '@biblionarium_chatgpt_bot'
+CHATBOT_HANDLE = os.environ['CHATBOT_HANDLE']
 # Retrieve last ID message : Create an empty text file named chatgpt.txt, write 1 on the first line of
 # the text file and save it, write the full path of your file below
 FILENAME = 'chatgpt.txt'
 
+print(BOT_TOKEN)
 
 # 2a. Function that gets the response from OpenAI's chatbot
 async def openAI(prompt, max_tokens):
