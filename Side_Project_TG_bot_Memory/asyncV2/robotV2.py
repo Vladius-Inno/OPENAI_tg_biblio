@@ -21,6 +21,7 @@ CHATBOT_HANDLE = os.environ['CHATBOT_HANDLE']
 # the text file and save it, write the full path of your file below
 FILENAME = 'chatgpt.txt'
 
+
 # 2a. Function that gets the response from OpenAI's chatbot
 async def openAI(prompt, max_tokens):
     # Make the request to the OpenAI API
@@ -49,10 +50,8 @@ async def openAImage(prompt):
         headers={'Authorization': f'Bearer {API_KEY}'},
         json={'prompt': prompt, 'n': 1, 'size': '256x256'}
     )
-
     response_text = json.loads(resp.text)
     # print(response_text['data'][0]['url'])
-      
     return response_text['data'][0]['url']
 
 
@@ -70,6 +69,7 @@ async def telegram_bot_sendtext(bot_message, chat_id, msg_id):
         json=data, timeout=10
     )
     print("TG sent the data", response)
+
     return response.json()
 
 
@@ -139,6 +139,9 @@ async def ChatGPTbot():
                             bot_response = await openAI(prompt, 200)
                             # Sending back response to telegram group
                             x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
+                            name = result['message']['new_chat_participant']['first_name']
+                            x = await telegram_bot_sendtext(f'Новый пользователь - {name}', '163905035', None)
+
 
                     except Exception as e: 
                         print(e)
@@ -147,7 +150,7 @@ async def ChatGPTbot():
                             prompt = result['message']['text'].replace("/img", "")
                             bot_response = await openAImage(prompt)
                             x = await telegram_bot_sendimage(bot_response, chat_id, msg_id)
-                    except Exception as e: 
+                    except Exception as e:
                         print(e)
                         
                     boolean_active = False
@@ -161,17 +164,14 @@ async def ChatGPTbot():
                     if 'reply_to_message' in result['message']:
                         if result['message']['reply_to_message']['from']['is_bot']:
                             prompt = result['message']['text']
-                            
                             # Getting historical messages from user
                             write_history = await memory.get_channel_messages(chat_id, msg_id)
-                            
                             boolean_active = True
 
                     if boolean_active:
                         try:
                             prompt1 = await checkTone(prompt)
                             prompt = prompt1[0]
-                            
                             bot_personality = prompt1[1]
                             boolean_active = True
                         except Exception as e: 
@@ -185,13 +185,18 @@ async def ChatGPTbot():
                                 bot_response = await openAI(f"{bot_personality}{vague_prompt}", 300)
                             
                             x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
-                            
-                        except Exception as e: 
+                            # x = await telegram_bot_sendtext('I just sent some message', '163905035', None)
+
+                        except Exception as e:
                             print("Error while waiting for the answer from OpenAI", e)
-                            #TODO Send the message to TG that the answer has failed
+                            x = await telegram_bot_sendtext("Ответ от центрального мозга потерялся в дороге",
+                                                            chat_id, msg_id)
+                            x = await telegram_bot_sendtext(f"OpenAI не ответил вовремя - {e}", '163905035', None)
+
 
     except Exception as e: 
         print("General error in ChatGPTbot", e)
+        x = await telegram_bot_sendtext(f"Случилась общая ошибка в коде - {e}", '163905035', None)
 
     # Updating file with last update ID
     with open(FILENAME, 'w') as f:
