@@ -21,8 +21,6 @@ CHATBOT_HANDLE = os.environ['CHATBOT_HANDLE']
 # the text file and save it, write the full path of your file below
 FILENAME = 'chatgpt.txt'
 
-print(BOT_TOKEN)
-
 # 2a. Function that gets the response from OpenAI's chatbot
 async def openAI(prompt, max_tokens):
     # Make the request to the OpenAI API
