@@ -105,7 +105,7 @@ async def ChatGPTbot():
     with open(FILENAME) as f:
         last_update = f.read()
     # Check for new messages in Telegram group
-    url = f'https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset={last_update}'
+    url = f'https://api.telegram.org/bot{BOT_TOKEN}/getUpdates'
     # print('ChatGPTbot sending request')
     try:
         response = requests.get(url, timeout=10)
