@@ -111,11 +111,17 @@ async def ChatGPTbot():
         response = requests.get(url, timeout=10)
     except Exception as e:
         print("Error in get updates", e)
+        x = await telegram_bot_sendtext(f"Не смог получить апдейт от телеграма - {e}", '163905035', None)
+
     # print("ChatGPTbot got the response", response)
     data = json.loads(response.content)
     # print("Printing the data", data)
-    
-    result = data['result'][len(data['result'])-1]
+
+    try:
+        result = data['result'][len(data['result'])-1]
+    except Exception as e:
+        print('Error in parsing updates', e)
+        x = await telegram_bot_sendtext(f"Не смог разобрать апдейт от телеграма - {e}", '163905035', None)
 
     try:
         # Checking for new message
@@ -141,10 +147,9 @@ async def ChatGPTbot():
                             x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
                             name = result['message']['new_chat_participant']['first_name']
                             x = await telegram_bot_sendtext(f'Новый пользователь - {name}', '163905035', None)
+                    except Exception as e:
+                        print("Error in greeting", e)
 
-
-                    except Exception as e: 
-                        print(e)
                     try:
                         if '/img' in result['message']['text']:
                             prompt = result['message']['text'].replace("/img", "")
@@ -193,7 +198,6 @@ async def ChatGPTbot():
                                                             chat_id, msg_id)
                             x = await telegram_bot_sendtext(f"OpenAI не ответил вовремя - {e}", '163905035', None)
 
-
     except Exception as e: 
         print("General error in ChatGPTbot", e)
         x = await telegram_bot_sendtext(f"Случилась общая ошибка в коде - {e}", '163905035', None)
@@ -214,4 +218,6 @@ loop = asyncio.get_event_loop()
 loop.run_until_complete(main())
 
 # TODO fix if simultaneously get to messages in diffenrent topics or inform that the answer fails
+# TODO add the /help command
+
 
