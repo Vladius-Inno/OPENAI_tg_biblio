@@ -195,9 +195,9 @@ async def ChatGPTbot():
                             if write_history != '':
                                 prompt = write_history+"\n\nQ : "+prompt+"\n\n###\n\n"
                             
-                            bot_response = await openAI(f"{bot_personality}{prompt}", 300)
+                            bot_response = await openAI(f"{bot_personality}{prompt}", 400)
                             if bot_response == '':
-                                bot_response = await openAI(f"{bot_personality}{vague_prompt}", 300)
+                                bot_response = await openAI(f"{bot_personality}{vague_prompt}", 400)
                             
                             x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
                             # x = await telegram_bot_sendtext('I just sent some message', '163905035', None)
