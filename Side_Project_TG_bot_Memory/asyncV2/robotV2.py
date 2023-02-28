@@ -26,13 +26,17 @@ FILENAME = 'chatgpt.txt'
 async def openAI(prompt, max_tokens):
     # Make the request to the OpenAI API
     print("openAI sending request", prompt)
-    response = requests.post(
-        'https://api.openai.com/v1/completions',
-        headers={'Authorization': f'Bearer {API_KEY}'},
-        json={'model': MODEL, 'prompt': prompt, 'temperature': 0.8, 'max_tokens': max_tokens},
-        timeout=30
-    )
-    print("openAI got the result", response)
+    response = None
+    try:
+        response = requests.post(
+            'https://api.openai.com/v1/completions',
+            headers={'Authorization': f'Bearer {API_KEY}'},
+            json={'model': MODEL, 'prompt': prompt, 'temperature': 0.9, 'max_tokens': max_tokens},
+            timeout=30
+        )
+        print("openAI got the result", response)
+    except Exception as e:
+        print('Error in getting tesponse from OpenAI', e)
 
     result = response.json()
     final_result = ''
@@ -64,10 +68,14 @@ async def telegram_bot_sendtext(bot_message, chat_id, msg_id):
         'reply_to_message_id': msg_id
     }
     print("TG sending the text", data)
-    response = requests.post(
-        'https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage',
-        json=data, timeout=10
-    )
+    response = None
+    try:
+        response = requests.post(
+            'https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage',
+            json=data, timeout=10
+        )
+    except Exception as e:
+        print('Error in sending text to TG', e)
     print("TG sent the data", response)
 
     return response.json()
@@ -107,8 +115,9 @@ async def ChatGPTbot():
     # Check for new messages in Telegram group
     url = f'https://api.telegram.org/bot{BOT_TOKEN}/getUpdates'
     # print('ChatGPTbot sending request')
+    response = None
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=20)
     except Exception as e:
         print("Error in get updates", e)
         x = await telegram_bot_sendtext(f"Не смог получить апдейт от телеграма - {e}", '163905035', None)
