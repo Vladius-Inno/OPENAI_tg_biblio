@@ -147,9 +147,10 @@ async def ChatGPTbot():
                     try:
                         # Greeting message for new participants
                         if 'new_chat_participant' in result['message']:
-                            prompt = 'Write in a ' + random.choice(tone_list) + ' tone: ' + \
-                                     "I am here to assist you. Nice to meet you, " + \
+                            prompt = 'Напиши в дружелюбном тоне  ' + \
+                                     "Приветствую! Буду рад помочь вам, " + \
                                      result['message']['new_chat_participant']['first_name']
+                            # random.choice(tone_list) + ' tone: ' + \
 
                             bot_response = await openAI(prompt, 200)
                             # Sending back response to telegram group
