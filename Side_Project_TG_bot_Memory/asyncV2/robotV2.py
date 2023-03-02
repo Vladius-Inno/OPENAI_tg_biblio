@@ -6,6 +6,7 @@ import random
 import memory
 import asyncio
 import os
+import research
 
 # OpenAI secret Key
 API_KEY = os.environ['API_KEY']
@@ -20,7 +21,8 @@ CHATBOT_HANDLE = os.environ['CHATBOT_HANDLE']
 # Retrieve last ID message : Create an empty text file named chatgpt.txt, write 1 on the first line of
 # the text file and save it, write the full path of your file below
 FILENAME = 'chatgpt.txt'
-
+ASK_COMMAND = '/ask'
+file = 'ClockworkOrange.txt'
 
 # 2a. Function that gets the response from OpenAI's chatbot
 async def openAI(prompt, max_tokens):
@@ -47,16 +49,16 @@ async def openAI(prompt, max_tokens):
 
 
 # 2b. Function that gets an Image from OpenAI
-async def openAImage(prompt):
-    # Make the request to the OpenAI API
-    resp = requests.post(
-        'https://api.openai.com/v1/images/generations',
-        headers={'Authorization': f'Bearer {API_KEY}'},
-        json={'prompt': prompt, 'n': 1, 'size': '256x256'}
-    )
-    response_text = json.loads(resp.text)
-    # print(response_text['data'][0]['url'])
-    return response_text['data'][0]['url']
+# async def openAImage(prompt):
+#     # Make the request to the OpenAI API
+#     resp = requests.post(
+#         'https://api.openai.com/v1/images/generations',
+#         headers={'Authorization': f'Bearer {API_KEY}'},
+#         json={'prompt': prompt, 'n': 1, 'size': '256x256'}
+#     )
+#     response_text = json.loads(resp.text)
+#     # print(response_text['data'][0]['url'])
+#     return response_text['data'][0]['url']
 
 
 # Sending a message to a specific telegram group
@@ -82,12 +84,12 @@ async def telegram_bot_sendtext(bot_message, chat_id, msg_id):
 
 
 # Sending a image to a specific telegram group
-async def telegram_bot_sendimage(image_url, group_id, msg_id):
-    data = {'chat_id': group_id, 'photo': image_url, 'reply_to_message_id': msg_id}
-    url = 'https://api.telegram.org/bot' + BOT_TOKEN + '/sendPhoto'
-    
-    response = requests.post(url, data=data)
-    return response.json()
+# async def telegram_bot_sendimage(image_url, group_id, msg_id):
+#     data = {'chat_id': group_id, 'photo': image_url, 'reply_to_message_id': msg_id}
+#     url = 'https://api.telegram.org/bot' + BOT_TOKEN + '/sendPhoto'
+#
+#     response = requests.post(url, data=data)
+#     return response.json()
 
 
 # Checking for specific tone for message
@@ -207,6 +209,22 @@ async def ChatGPTbot():
                             x = await telegram_bot_sendtext("Ответ от центрального мозга потерялся в дороге",
                                                             chat_id, msg_id)
                             x = await telegram_bot_sendtext(f"OpenAI не ответил вовремя - {e}", '163905035', None)
+
+                    if ASK_COMMAND in result['message']['text']:
+                        prompt = result['message']['text'].replace(ASK_COMMAND, "")
+                        asked = True
+                        print('Got the /ask command, master!')
+                        try:
+                            answer = research.reply(file, prompt)
+                            x = await telegram_bot_sendtext(answer, chat_id, msg_id)
+                            # x = await telegram_bot_sendtext('I just sent some message', '163905035', None)
+                        except Exception as e:
+                            print("Error while waiting for the answer with from OpenAI for the /ask", e)
+                            x = await telegram_bot_sendtext("Этот книжный вопрос поломал логику",
+                                                            chat_id, msg_id)
+                            x = await telegram_bot_sendtext(f"OpenAI не ответил вовремя на /ask - {e}", '163905035', None)
+                        except Exception as e:
+                            print("Couldn't handle the /ask command", e)
 
     except Exception as e: 
         print("General error in ChatGPTbot", e)
