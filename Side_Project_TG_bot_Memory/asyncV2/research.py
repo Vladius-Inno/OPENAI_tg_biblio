@@ -106,11 +106,11 @@ class Parser():
         return results.head(n)
 
     def create_prompt(self, df, file, user_input):
-        result = self.search_embeddings(df, user_input, n=3)
+        result = self.search_embeddings(df, user_input, n=5)
         with open(file, 'r') as f:
             book_name = str(f.readline()).strip()
-        prompt = """Ты языковая модель с экспертизой в анализе литературы и книг.
-Тебе зададут вопрос и несколько текстовых эмбеддингов (embeddings) из книги """ + book_name + """
+        prompt = """Представь, что ты литературовед.
+Тебе зададут вопрос и дадут несколько текстовых эмбеддингов из книги """ + book_name + """
 в порядке их косинусного сходства (cosine similarity) по отношению к запросу. 
 Ты должна вернуть ответ на вопрос на основании этих данных.
       Вопрос: """ + user_input + """
@@ -118,6 +118,8 @@ class Parser():
       1.""" + str(result.iloc[0]['text']) + """
       2.""" + str(result.iloc[1]['text']) + """
       3.""" + str(result.iloc[2]['text']) + """
+      4.""" + str(result.iloc[3]['text']) + """
+      5.""" + str(result.iloc[4]['text']) + """
 Дай ответ на этот вопрос, основываясь на тексте книги."""
         print('Done creating prompt')
         print(prompt)
