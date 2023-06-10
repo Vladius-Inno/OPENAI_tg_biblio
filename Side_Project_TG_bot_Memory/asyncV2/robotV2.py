@@ -9,6 +9,7 @@ import os
 import research
 import sqlite3
 import time
+from retrying_async import retry
 
 
 # OpenAI secret Key
@@ -37,10 +38,9 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS messages
 conn.commit()
 
 
-# 2a. Function that gets the response from OpenAI's chatbot
+# Make the request to the OpenAI API
+@retry(attempts=3, delay=3)
 async def openAI(prompt, max_tokens, messages):
-    # Make the request to the OpenAI API
-
     # the example
     # messages = [
     #     {"role": "system", "content": "You are a helpful assistant."},
@@ -48,28 +48,26 @@ async def openAI(prompt, max_tokens, messages):
     #     {"role": "assistant", "content": "The Los Angeles Dodgers won the World Series in 2020."},
     #     {"role": "user", "content": "Where was it played?"}
     # ]
+    # if we don't get the history for the chat, then we create the list which append with the prompt
     if messages is None:
         messages = []
     messages.append({"role": "user", "content": prompt})
-    print("openAI sending request", prompt)
-    response = None
-    try:
-        response = requests.post(
-            'https://api.openai.com/v1/chat/completions',
-            headers={'Authorization': f'Bearer {API_KEY}'},
-            json={'model': MODEL, 'messages': messages,
-                  'temperature': 0.8, 'max_tokens': max_tokens},
-            timeout=30
-        )
-        print("openAI got the result", response)
-    except Exception as e:
-        print('Error in getting tesponse from OpenAI', e)
 
+    # TODO Add the system message as a role setting
+
+    print("openAI sending request", prompt)
+    response = requests.post(
+        'https://api.openai.com/v1/chat/completions',
+        headers={'Authorization': f'Bearer {API_KEY}'},
+        json={'model': MODEL, 'messages': messages,
+              'temperature': 0.8, 'max_tokens': max_tokens},
+        timeout=30
+    )
+    response.raise_for_status()  # Raises an exception for non-2xx status codes
     result = response.json()
     final_result = ''
     for i in range(0, len(result['choices'])):
-        final_result+=result['choices'][i]['message']['content']
-
+        final_result += result['choices'][i]['message']['content']
     return final_result
 
 
@@ -107,9 +105,192 @@ async def get_last_messages(chat_id, amount):
 #     return response_text['data'][0]['url']
 
 
+@retry(attempts=3, delay=3)
+async def get_updates(last_update):
+    # Check for new messages in Telegram group
+    # let's test if it works with offset +1
+    last_update = str(int(last_update)+1)
+    url = f'https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset={last_update}'
+    response = requests.get(url, timeout=20)
+    response.raise_for_status()
+    data = json.loads(response.content)
+    # provide all messages instead of one in update
+    # result = data['result'][len(data['result'])-1]
+    result = data['result']
+    print(data['result'])
+    print(len(data['result']), "messages")
+    return result
+
+
+async def parse_updates(result, last_update):
+    if float(result['update_id']) > float(last_update):
+        # Checking for new messages that did not come from chatGPT
+        print('got here')
+        if not result['message']['from']['is_bot']:
+            last_update = str(int(result['update_id']))
+            chat_type = str(result['message']['chat']['type'])
+
+            if chat_type == 'supergroup':
+                await handle_supergroup(result)
+
+            # check if it's a private chat and answer the same text
+            if chat_type == 'private':
+                await handle_private(result)
+    return last_update
+
+async def handle_supergroup(result):
+    print('SuperDooper')
+    # Give your bot a personality using adjectives from the tone list
+    bot_personality = ''
+    tone_list = ['Friendly', 'Professional', 'Humorous', 'Sarcastic', 'Witty', 'Sassy', 'Charming', 'Cheeky', 'Quirky',
+                 'Laid-back', 'Elegant', 'Playful', 'Soothing', 'Intense', 'Passionate']
+    # Leave write_history BLANK
+    write_history = ''
+    chat_id = str(result['message']['chat']['id'])
+    if chat_id in ALLOWED_GROUP_ID:
+        msg_id = str(int(result['message']['message_id']))
+        # print('In allowed group ID')
+        try:
+            # Greeting message for new participants
+            if 'new_chat_participant' in result['message']:
+                prompt = 'Напиши в дружелюбном тоне  ' + \
+                         "Приветствую! Буду рад помочь вам, " + \
+                         result['message']['new_chat_participant']['first_name']
+                # random.choice(tone_list) + ' tone: ' + \
+
+                bot_response = await openAI(prompt, 200, None)
+                # Sending back response to telegram group
+                try:
+                    x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
+                except requests.exceptions.RequestException as e:
+                    print('Error in sending text to TG', e)
+                name = result['message']['new_chat_participant']['first_name']
+                try:
+                    x = await telegram_bot_sendtext(f'Новый пользователь - {name}', '163905035', None)
+                except requests.exceptions.RequestException as e:
+                    print('Error in sending text to TG', e)
+
+        except Exception as e:
+            print("Error in greeting", e)
+
+        # try:
+        #     if '/img' in result['message']['text']:
+        #         prompt = result['message']['text'].replace("/img", "")
+        #         bot_response = await openAImage(prompt)
+        #         x = await telegram_bot_sendimage(bot_response, chat_id, msg_id)
+        # except Exception as e:
+        #     print(e)
+
+        boolean_active = False
+        # Checking that user mentionned chatbot's username in message
+        if CHATBOT_HANDLE in result['message']['text']:
+            prompt = result['message']['text'].replace(CHATBOT_HANDLE, "")
+            boolean_active = True
+            print('Got the Message, master!')
+
+        # Verifying that the user is responding to the ChatGPT bot
+        if 'reply_to_message' in result['message']:
+            if result['message']['reply_to_message']['from']['username'] == CHATBOT_HANDLE[1:]:
+                prompt = result['message']['text']
+                # Getting historical messages from user
+                write_history = await memory.get_channel_messages(chat_id, msg_id)
+                boolean_active = True
+
+        if boolean_active:
+            try:
+                prompt1 = await checkTone(prompt)
+                prompt = prompt1[0]
+                bot_personality = prompt1[1]
+                boolean_active = True
+            except Exception as e:
+                print("Error at await checkTone", e)
+            try:
+                if write_history != '':
+                    prompt = write_history + "\n\nQ : " + prompt + "\n\n###\n\n"
+
+                try:
+                    bot_response = await openAI(f"{bot_personality}{prompt}", 400, None)
+                except requests.exceptions.RequestException as e:
+                    print("Error while waiting for the answer from OpenAI", e)
+                #
+                # if bot_response == '':
+                #     bot_response = await openAI(f"{bot_personality}{vague_prompt}", 400, None)
+                try:
+                    x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
+                except requests.exceptions.RequestException as e:
+                    print('Error in sending text to TG', e)
+
+                # x = await telegram_bot_sendtext('I just sent some message', '163905035', None)
+
+            except Exception as e:
+                print("Error while waiting for the answer from OpenAI", e)
+                try:
+                    x = await telegram_bot_sendtext("Ответ от центрального мозга потерялся в дороге",
+                                                    chat_id, msg_id)
+                except requests.exceptions.RequestException as e:
+                    print('Error in sending text to TG', e)
+                try:
+                    x = await telegram_bot_sendtext(f"OpenAI не ответил вовремя - {e}", '163905035', None)
+                except requests.exceptions.RequestException as e:
+                    print('Error in sending text to TG', e)
+
+        if ASK_COMMAND in result['message']['text']:
+            prompt = result['message']['text'].replace(ASK_COMMAND, "")
+            asked = True
+            print('Got the /ask command, master!')
+            try:
+                answer = research.reply(file, prompt)
+                try:
+                    x = await telegram_bot_sendtext(answer, chat_id, msg_id)
+                except requests.exceptions.RequestException as e:
+                    print('Error in sending text to TG', e)
+            except Exception as e:
+                print("Error while waiting for the answer with from OpenAI for the /ask", e)
+                try:
+                    x = await telegram_bot_sendtext("Этот книжный вопрос поломал логику",
+                                                    chat_id, msg_id)
+                except requests.exceptions.RequestException as e:
+                    print('Error in sending text to TG', e)
+                try:
+                    x = await telegram_bot_sendtext(f"OpenAI не ответил вовремя на /ask - {e}",
+                                                    '163905035', None)
+                except requests.exceptions.RequestException as e:
+                    print('Error in sending text to TG', e)
+
+            except Exception as e:
+                print("Couldn't handle the /ask command", e)
+
+
+async def handle_private(result):
+    chat_id = str(result['message']['chat']['id'])
+    msg_id = str(int(result['message']['message_id']))
+    msg = result['message']['text']
+
+    messages = await get_last_messages(chat_id, 6)
+    print(messages)
+
+    await add_private_message_to_db(chat_id, msg, 'user')
+    prompt = msg
+    try:
+        bot_response = await openAI(f"{prompt}", 400, messages)
+        await add_private_message_to_db(chat_id, bot_response, 'assistant')
+    except requests.exceptions.RequestException as e:
+        print("Error while waiting for the answer from OpenAI", e)
+        bot_response = "Случилось некоторое дерьмо"
+        # TODO Добавить "Я всё ещё думаю" и попросить отправить запрос повторно
+    try:
+        x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
+    except requests.exceptions.RequestException as e:
+        print('Error in sending text to TG', e)
+    try:
+        x = await telegram_bot_sendtext('I just sent some message', '163905035', None)
+    except requests.exceptions.RequestException as e:
+        print('Error in sending text to TG', e)
+
+
 # Sending a message to a specific telegram group
+@retry(attempts=3, delay=3)
 async def telegram_bot_sendtext(bot_message, chat_id, msg_id):
-    
     data = {
         'chat_id': chat_id,
         'text': bot_message,
@@ -117,13 +298,12 @@ async def telegram_bot_sendtext(bot_message, chat_id, msg_id):
     }
     print("TG sending the text", data)
     response = None
-    try:
-        response = requests.post(
-            'https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage',
-            json=data, timeout=10
-        )
-    except Exception as e:
-        print('Error in sending text to TG', e)
+    response = requests.post(
+        'https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage',
+        json=data, timeout=10
+    )
+    response.raise_for_status()  # Raises an exception for non-2xx status codes
+
     print("TG sent the data", response)
 
     return response.json()
@@ -140,7 +320,7 @@ async def telegram_bot_sendtext(bot_message, chat_id, msg_id):
 
 # Checking for specific tone for message
 async def checkTone(user_message):
-    bot_personality=''
+    bot_personality = ''
     match = re.search(r"/setTone\((.*?)\)", user_message, flags=re.IGNORECASE)
     if match:
         substring = match.group(1)
@@ -150,165 +330,34 @@ async def checkTone(user_message):
 
 
 async def ChatGPTbot():
-    # Give your bot a personality using adjectives from the tone list
-    bot_personality = ''
-    # Leave write_history BLANK
-    write_history = ''
-    
-    tone_list = ['Friendly', 'Professional', 'Humorous', 'Sarcastic', 'Witty', 'Sassy', 'Charming', 'Cheeky', 'Quirky',
-                 'Laid-back', 'Elegant', 'Playful', 'Soothing', 'Intense', 'Passionate']
-          
     with open(FILENAME) as f:
         last_update = f.read()
     f.close()
-    # Check for new messages in Telegram group
-    url = f'https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset={last_update}'
-    # print('ChatGPTbot sending request')
-    response = None
-    try:
-        response = requests.get(url, timeout=20)
-    except Exception as e:
-        print("Error in get updates", e)
-        x = await telegram_bot_sendtext(f"Не смог получить апдейт от телеграма - {e}", '163905035', None)
 
-    # print("ChatGPTbot got the response", response)
-    data = json.loads(response.content)
-    # print("Printing the data", data)
+    # get updates for the bot
+    try:
+        result = await get_updates(last_update)
+    except requests.exceptions.RequestException as e:
+        print("Didn't get the update from TG", e)
+        try:
+            x = await telegram_bot_sendtext(f"Не смог получить апдейт от телеграма - {e}", '163905035', None)
+        except requests.exceptions.RequestException as e:
+            print('Error in sending text to TG', e)
 
     try:
-        result = data['result'][len(data['result'])-1]
-        print(result)
-    except Exception as e:
-        print('Error in parsing updates', e)
-        x = await telegram_bot_sendtext(f"Не смог разобрать апдейт от телеграма - {e}", '163905035', None)
-
-    try:
-        # Checking for new message
-        if float(result['update_id']) > float(last_update):
-            # Checking for new messages that did not come from chatGPT
-            if not result['message']['from']['is_bot']:
-                last_update = str(int(result['update_id']))
-                # Retrieving the chat ID of the sender of the request
-                chat_id = str(result['message']['chat']['id'])
-                chat_type = str(result['message']['chat']['type'])
-
-                if chat_type == 'supergroup':
-                    print('SuperDooper')
-                    if chat_id in ALLOWED_GROUP_ID:
-                        msg_id = str(int(result['message']['message_id']))
-                        # print('In allowed group ID')
-                        try:
-                            # Greeting message for new participants
-                            if 'new_chat_participant' in result['message']:
-                                prompt = 'Напиши в дружелюбном тоне  ' + \
-                                         "Приветствую! Буду рад помочь вам, " + \
-                                         result['message']['new_chat_participant']['first_name']
-                                # random.choice(tone_list) + ' tone: ' + \
-
-                                bot_response = await openAI(prompt, 200, None)
-                                # Sending back response to telegram group
-                                x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
-                                name = result['message']['new_chat_participant']['first_name']
-                                x = await telegram_bot_sendtext(f'Новый пользователь - {name}', '163905035', None)
-                        except Exception as e:
-                            print("Error in greeting", e)
-
-                        # try:
-                        #     if '/img' in result['message']['text']:
-                        #         prompt = result['message']['text'].replace("/img", "")
-                        #         bot_response = await openAImage(prompt)
-                        #         x = await telegram_bot_sendimage(bot_response, chat_id, msg_id)
-                        # except Exception as e:
-                        #     print(e)
-
-                        boolean_active = False
-                        # Checking that user mentionned chatbot's username in message
-                        if CHATBOT_HANDLE in result['message']['text']:
-                            prompt = result['message']['text'].replace(CHATBOT_HANDLE, "")
-                            boolean_active = True
-                            print('Got the Message, master!')
-
-                        # Verifying that the user is responding to the ChatGPT bot
-                        if 'reply_to_message' in result['message']:
-                            if result['message']['reply_to_message']['from']['username'] == CHATBOT_HANDLE[1:]:
-                                prompt = result['message']['text']
-                                # Getting historical messages from user
-                                write_history = await memory.get_channel_messages(chat_id, msg_id)
-                                boolean_active = True
-
-                        if boolean_active:
-                            try:
-                                prompt1 = await checkTone(prompt)
-                                prompt = prompt1[0]
-                                bot_personality = prompt1[1]
-                                boolean_active = True
-                            except Exception as e:
-                                print("Error at await checkTone", e)
-                            try:
-                                if write_history != '':
-                                    prompt = write_history+"\n\nQ : "+prompt+"\n\n###\n\n"
-
-                                bot_response = await openAI(f"{bot_personality}{prompt}", 400, None)
-                                if bot_response == '':
-                                    bot_response = await openAI(f"{bot_personality}{vague_prompt}", 400, None)
-
-                                x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
-                                # x = await telegram_bot_sendtext('I just sent some message', '163905035', None)
-
-                            except Exception as e:
-                                print("Error while waiting for the answer from OpenAI", e)
-                                x = await telegram_bot_sendtext("Ответ от центрального мозга потерялся в дороге",
-                                                                chat_id, msg_id)
-                                x = await telegram_bot_sendtext(f"OpenAI не ответил вовремя - {e}", '163905035', None)
-
-                        if ASK_COMMAND in result['message']['text']:
-                            prompt = result['message']['text'].replace(ASK_COMMAND, "")
-                            asked = True
-                            print('Got the /ask command, master!')
-                            try:
-                                answer = research.reply(file, prompt)
-                                x = await telegram_bot_sendtext(answer, chat_id, msg_id)
-                                # x = await telegram_bot_sendtext('I just sent some message', '163905035', None)
-                            except Exception as e:
-                                print("Error while waiting for the answer with from OpenAI for the /ask", e)
-                                x = await telegram_bot_sendtext("Этот книжный вопрос поломал логику",
-                                                                chat_id, msg_id)
-                                x = await telegram_bot_sendtext(f"OpenAI не ответил вовремя на /ask - {e}", '163905035', None)
-                            except Exception as e:
-                                print("Couldn't handle the /ask command", e)
-
-                # check if it's a private chat and answer the same text
-                if chat_type == 'private':
-                    boolean_active_private = True
-                    msg_id = str(int(result['message']['message_id']))
-                    msg = result['message']['text']
-
-                    # testing getting last messages for this chat
-                    messages = await get_last_messages(chat_id, 6)
-                    print(messages)
-
-                    await add_private_message_to_db(chat_id, msg, 'user')
-                    prompt = msg
-                    try:
-                        bot_response = await openAI(f"{prompt}", 400, messages)
-                        await add_private_message_to_db(chat_id, bot_response, 'assistant')
-                    except Exception as e:
-                        print("Error while waiting for the answer from OpenAI", e)
-                        bot_response = "Случилось некоторое дерьмо"
-                    try:
-                        x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
-                        x = await telegram_bot_sendtext('I just sent some message', '163905035', None)
-                    except Exception as e:
-                            x = await telegram_bot_sendtext(f"OpenAI не ответил вовремя - {e}", '163905035', None)
-
+        # Checking for new message and processing them
+        for res in result:
+            last_update = await parse_updates(res, last_update)
     except Exception as e:
         print("General error in ChatGPTbot", e)
-        x = await telegram_bot_sendtext(f"Случилась общая ошибка в коде - {e}", '163905035', None)
+        try:
+            x = await telegram_bot_sendtext(f"Случилась общая ошибка в коде - {e}", '163905035', None)
+        except requests.exceptions.RequestException as e:
+            print('Error in sending text to TG', e)
 
     # Updating file with last update ID
     with open(FILENAME, 'w') as f:
         f.write(last_update)
-        
     return "done"
 
 
@@ -323,7 +372,15 @@ loop.run_until_complete(main())
 cursor.close()
 conn.close()
 
-# TODO fix if simultaneously get to messages in diffenrent topics or inform that the answer fails
+
+# TODO Add repeating requests if something fails for TG
+
+# TODO Add the erase dialog option
+
 # TODO add the /help command
+
+# TODO Make bot send postponed messages
+
+# TODO Make GPT wrap what is supposed to be sent to user, like "Tell him that he has two days left"..
 
 
