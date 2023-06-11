@@ -27,6 +27,7 @@ CHATBOT_HANDLE = os.environ['CHATBOT_HANDLE']
 # the text file and save it, write the full path of your file below
 FILENAME = 'chatgpt.txt'
 ASK_COMMAND = '/ask'
+CLEAR_COMMAND = '/clear'
 file = '1ClockworkOrange.txt'
 
 conn = sqlite3.connect('messages.db')
@@ -91,6 +92,12 @@ async def get_last_messages(chat_id, amount):
         # print(f"Chat ID: {chat_id}, Role: {role}, Message: {message}")
         messages.append({'role': role, 'content': message})
     return messages
+
+
+async def handle_clear_command(chat_id):
+    # Clear the message history for the specific user with the given chat_id
+    cursor.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
+    conn.commit()
 
 # 2b. Function that gets an Image from OpenAI
 # async def openAImage(prompt):
@@ -169,7 +176,6 @@ async def handle_supergroup(result):
                     x = await telegram_bot_sendtext(f'Новый пользователь - {name}', '163905035', None)
                 except requests.exceptions.RequestException as e:
                     print('Error in sending text to TG', e)
-
         except Exception as e:
             print("Error in greeting", e)
 
@@ -266,10 +272,34 @@ async def handle_private(result):
     msg_id = str(int(result['message']['message_id']))
     msg = result['message']['text']
 
+    if CLEAR_COMMAND in msg:
+        try:
+            await handle_clear_command(chat_id)
+            try:
+                x = await telegram_bot_sendtext("Диалог сброшен",
+                                                chat_id, msg_id)
+            except requests.exceptions.RequestException as e:
+                print('Error in sending text to TG', e)
+            return
+        except Exception as e:
+            print("Couldn't handle the /clear command", e)
+            try:
+                x = await telegram_bot_sendtext("Извините, не смог очистить диалог",
+                                                chat_id, msg_id)
+            except requests.exceptions.RequestException as e:
+                print('Error in sending text to TG', e)
+            try:
+                x = await telegram_bot_sendtext(f"Не смог очистить диалог у {chat_id} - {e}",
+                                                '163905035', None)
+            except requests.exceptions.RequestException as e:
+                print('Error in sending text to TG', e)
+
+    # get the last n messages from the db to feed them to the gpt
     messages = await get_last_messages(chat_id, 6)
     print(messages)
-
+    # add the last received message to the db
     await add_private_message_to_db(chat_id, msg, 'user')
+    # send the last message and the previous historical messages from the db to the GPT
     prompt = msg
     try:
         bot_response = await openAI(f"{prompt}", 400, messages)
@@ -283,7 +313,7 @@ async def handle_private(result):
     except requests.exceptions.RequestException as e:
         print('Error in sending text to TG', e)
     try:
-        x = await telegram_bot_sendtext('I just sent some message', '163905035', None)
+        x = await telegram_bot_sendtext('I just sent some private message', '163905035', None)
     except requests.exceptions.RequestException as e:
         print('Error in sending text to TG', e)
 
