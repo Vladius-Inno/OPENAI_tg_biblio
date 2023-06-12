@@ -10,6 +10,7 @@ import research
 import sqlite3
 import time
 from retrying_async import retry
+import datetime
 
 
 # OpenAI secret Key
@@ -28,6 +29,7 @@ CHATBOT_HANDLE = os.environ['CHATBOT_HANDLE']
 FILENAME = 'chatgpt.txt'
 ASK_COMMAND = '/ask'
 CLEAR_COMMAND = '/clear'
+DAY_LIMIT_PRIVATE = 5
 file = '1ClockworkOrange.txt'
 
 conn = sqlite3.connect('messages.db')
@@ -35,11 +37,12 @@ cursor = conn.cursor()
 
 # Create a table to store messages
 cursor.execute('''CREATE TABLE IF NOT EXISTS messages
-                  (timestamp INTEGER, chat_id INTEGER, role TEXT, message TEXT)''')
+                  (timestamp INTEGER, chat_id INTEGER, role TEXT, message TEXT, cleared INTEGER DEFAULT 0)''')
 conn.commit()
 
 
-# Make the request to the OpenAI API
+# Make the request to
+# the OpenAI API
 @retry(attempts=3, delay=3)
 async def openAI(prompt, max_tokens, messages):
     # the example
@@ -82,7 +85,7 @@ async def add_private_message_to_db(chat_id, text, role):
 
 async def get_last_messages(chat_id, amount):
     # Retrieve the last 5 messages from the database
-    cursor.execute(f"SELECT chat_id, role, message FROM messages WHERE chat_id = ? "
+    cursor.execute(f"SELECT chat_id, role, message FROM messages WHERE chat_id = ? AND CLEARED = 0 "
                    f"ORDER BY timestamp DESC LIMIT {amount}", (chat_id,))
     rows = cursor.fetchall()
     reversed_rows = reversed(rows)  # Reverse the order of the rows
@@ -94,9 +97,34 @@ async def get_last_messages(chat_id, amount):
     return messages
 
 
+async def check_message_limit(chat_id):
+    # Get the current timestamp
+    # current_time = time.time()
+
+    # Get the timestamp for the start of the current calendar day
+    start_of_day = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    start_of_day_timestamp = start_of_day.timestamp()
+
+    # Retrieve the message count for the current chat_id from the database
+    cursor.execute('SELECT COUNT(*) FROM messages WHERE chat_id = ? AND role = ? AND timestamp > ?',
+                   (chat_id, 'user', start_of_day_timestamp))
+    message_count = cursor.fetchone()[0]
+    print(f"Today {chat_id} had {message_count} messages")
+    # Check if the message limit has been reached
+    if message_count >= DAY_LIMIT_PRIVATE:
+        return False  # Message limit reached, return False
+
+    return True  # Message within limit, return True
+
+
 async def handle_clear_command(chat_id):
-    # Clear the message history for the specific user with the given chat_id
-    cursor.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
+    # # Clear the message history for the specific user with the given chat_id
+    # cursor.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
+    # conn.commit()
+
+    # Update the messages associated with the specified chat_id so they are "cleared"
+    # cursor.execute('UPDATE messages SET message = "<Cleared>" WHERE chat_id = ?', (chat_id,))
+    cursor.execute('UPDATE messages SET cleared = 1 WHERE chat_id = ?', (chat_id,))
     conn.commit()
 
 # 2b. Function that gets an Image from OpenAI
@@ -110,6 +138,20 @@ async def handle_clear_command(chat_id):
 #     response_text = json.loads(resp.text)
 #     # print(response_text['data'][0]['url'])
 #     return response_text['data'][0]['url']
+
+
+@retry(attempts=3, delay=3)
+async def edit_bot_message(text, chat_id, message_id ):
+    url = f'https://api.telegram.org/bot{BOT_TOKEN}/editMessageText'
+    payload = {
+        'chat_id': chat_id,
+        'message_id': message_id,
+        'text': text
+    }
+    response = requests.post(url, json=payload)
+    response.raise_for_status()
+    print("Edited the message in TG", response)
+    return response.json()
 
 
 @retry(attempts=3, delay=3)
@@ -144,6 +186,7 @@ async def parse_updates(result, last_update):
             if chat_type == 'private':
                 await handle_private(result)
     return last_update
+
 
 async def handle_supergroup(result):
     print('SuperDooper')
@@ -294,28 +337,46 @@ async def handle_private(result):
             except requests.exceptions.RequestException as e:
                 print('Error in sending text to TG', e)
 
-    # get the last n messages from the db to feed them to the gpt
-    messages = await get_last_messages(chat_id, 6)
-    print(messages)
-    # add the last received message to the db
-    await add_private_message_to_db(chat_id, msg, 'user')
-    # send the last message and the previous historical messages from the db to the GPT
-    prompt = msg
-    try:
-        bot_response = await openAI(f"{prompt}", 400, messages)
-        await add_private_message_to_db(chat_id, bot_response, 'assistant')
-    except requests.exceptions.RequestException as e:
-        print("Error while waiting for the answer from OpenAI", e)
-        bot_response = "Случилось некоторое дерьмо"
-        # TODO Добавить "Я всё ещё думаю" и попросить отправить запрос повторно
-    try:
-        x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
-    except requests.exceptions.RequestException as e:
-        print('Error in sending text to TG', e)
-    try:
-        x = await telegram_bot_sendtext('I just sent some private message', '163905035', None)
-    except requests.exceptions.RequestException as e:
-        print('Error in sending text to TG', e)
+    if await check_message_limit(chat_id):
+        # get the last n messages from the db to feed them to the gpt
+        messages = await get_last_messages(chat_id, 6)
+        print(messages)
+        # add the last received message to the db
+        await add_private_message_to_db(chat_id, msg, 'user')
+        # send the last message and the previous historical messages from the db to the GPT
+        prompt = msg
+
+        # send the quick message to the user, which shows that we start thinking
+        try:
+            x = await telegram_bot_sendtext("Ожидайте ответа от бота...", chat_id, msg_id)
+            # Extract the message_id from the response
+            sent_msg_id = x['result']['message_id']
+        except requests.exceptions.RequestException as e:
+            print('Error in sending "Wait for the answer" text to TG', e)
+
+        try:
+            bot_response = await openAI(f"{prompt}", 400, messages)
+            await add_private_message_to_db(chat_id, bot_response, 'assistant')
+        except requests.exceptions.RequestException as e:
+            print("Error while waiting for the answer from OpenAI", e)
+            bot_response = "Случилось некоторое дерьмо"
+            # TODO Добавить "Я всё ещё думаю" и попросить отправить запрос повторно
+        try:
+            # x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
+            # edit the previously sent message "Wait for the answer"
+            x = await edit_bot_message(bot_response,chat_id, sent_msg_id)
+        except requests.exceptions.RequestException as e:
+            print('Error in editing message', e)
+        try:
+            x = await telegram_bot_sendtext('I just sent some private message', '163905035', None)
+        except requests.exceptions.RequestException as e:
+            print('Error in sending text to TG', e)
+    else:
+        print(f'For {chat_id} the day limit is reached')
+        try:
+            x = await telegram_bot_sendtext("У вас закончился лимит сообщения на день", chat_id, msg_id)
+        except requests.exceptions.RequestException as e:
+            print('Error in sending "The limit is reached" text to TG', e)
 
 
 # Sending a message to a specific telegram group
@@ -333,9 +394,7 @@ async def telegram_bot_sendtext(bot_message, chat_id, msg_id):
         json=data, timeout=10
     )
     response.raise_for_status()  # Raises an exception for non-2xx status codes
-
     print("TG sent the data", response)
-
     return response.json()
 
 
@@ -402,10 +461,6 @@ loop.run_until_complete(main())
 cursor.close()
 conn.close()
 
-
-# TODO Add repeating requests if something fails for TG
-
-# TODO Add the erase dialog option
 
 # TODO add the /help command
 
