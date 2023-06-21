@@ -13,13 +13,6 @@ from retrying_async import retry
 from datetime import datetime, timedelta
 import sys
 
-# # Set default encoding to UTF-8
-# if sys.stdout.encoding != 'utf-8':
-#     sys.stdout.reconfigure(encoding='utf-8')
-#
-# if sys.stderr.encoding != 'utf-8':
-#     sys.stderr.reconfigure(encoding='utf-8')
-# Set default encoding to UTF-8 for stdout
 if sys.stdout.encoding != 'utf-8':
     sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
 
@@ -38,6 +31,8 @@ BOT_TOKEN = os.environ['BOT_TOKEN']
 ALLOWED_GROUP_ID = os.environ['ALLOWED_GROUP_ID']
 # Specify your Chat Bot handle
 CHATBOT_HANDLE = os.environ['CHATBOT_HANDLE']
+# The token for the payment provider
+PAY_TOKEN = os.environ['PAY_TOKEN']
 # Retrieve last ID message : Create an empty text file named chatgpt.txt, write 1 on the first line of
 # the text file and save it, write the full path of your file below
 FILENAME = 'chatgpt.txt'  # the update number is stored
@@ -48,19 +43,24 @@ START_COMMAND = '/start'
 INFO_COMMAND = '/info'
 REFERRAL_COMMAND = '/refer'
 
-
 SUBSCRIPTION_COMMAND = '/pay'
 SUBSCRIPTION_DATABASE = 'subscriptions.db'
 MESSAGES_DATABASE = 'messages.db'
 BOT_NAME = 'biblionarium_chatgpt_bot'
+PAY_TOKEN_TEST = "381764678:TEST:59292"
+SBER_TOKEN_TEST = "401643678:TEST:266f8c81-0fc1-46ac-b57f-64a5fcc97616"
+# Номер карты	2200 0000 0000 0053
+# Дата истечения срока действия	2024/12
+# Проверочный код на обратной стороне	123
 
 CHANNEL_NAME = 'Biblionarium'
-DAY_LIMIT_PRIVATE = 3  # base is 10
+DAY_LIMIT_PRIVATE = 10  # base is 10
 DAY_LIMIT_SUBSCRIPTION = 100
 CONTEXT_DEPTH = 3 * 2  # twice the context, because we get the users and the bots messages, base would be 10 * 2
 MAX_TOKENS = 500
-REFERRAL_BONUS = 3  # free messages that are used after the limit is over, base is 30
-file = '1ClockworkOrange.txt'  # the current book loaded file
+REFERRAL_BONUS = 30  # free messages that are used after the limit is over, base is 30
+MONTH_SUBSCRIPTION_PRICE = 150
+file = 'ClockworkOrange.txt'  # the current book loaded file
 
 conn = sqlite3.connect(MESSAGES_DATABASE)
 cursor = conn.cursor()
@@ -70,7 +70,9 @@ cursor_pay = conn_pay.cursor()
 
 # Create a table to store messages
 cursor.execute('''CREATE TABLE IF NOT EXISTS messages
-                  (timestamp INTEGER, chat_id INTEGER, role TEXT, message TEXT, cleared INTEGER DEFAULT 0)''')
+                  (id INTEGER PRIMARY KEY, timestamp INTEGER, chat_id INTEGER, role TEXT, message TEXT, 
+                  cleared INTEGER DEFAULT 0, subscription_status INTEGER, 
+                  FOREIGN KEY (chat_id) REFERENCES subscriptions (chat_id))''')
 conn.commit()
 
 # Create the subscriptions table
@@ -80,8 +82,7 @@ cursor_pay.execute('''CREATE TABLE IF NOT EXISTS subscriptions
 conn_pay.commit()
 
 
-# Make the request to
-# the OpenAI API
+# Make the request to the OpenAI API
 @retry(attempts=3, delay=3)
 async def openAI(prompt, max_tokens, messages):
     # the example
@@ -112,11 +113,13 @@ async def openAI(prompt, max_tokens, messages):
     return final_result
 
 
-async def add_private_message_to_db(chat_id, text, role):
+async def add_private_message_to_db(chat_id, text, role, subscription_status):
     # Here, we'll store the message in the SQLite database
     timestamp = int(time.time())
-    cursor.execute("INSERT INTO messages (timestamp, chat_id, role, message) VALUES (?, ?, ?, ?)",
-                   (timestamp, chat_id, role, text))
+    subscription_status = 1 if subscription_status else 0
+    cursor.execute("INSERT INTO messages (timestamp, chat_id, role, message, subscription_status) "
+                   "VALUES (?, ?, ?, ?, ?)",
+                   (timestamp, chat_id, role, text, subscription_status))
     conn.commit()
 
 
@@ -134,31 +137,36 @@ async def get_last_messages(chat_id, amount):
     return messages
 
 
-async def check_message_limit(chat_id, limit):
+async def check_message_limit(chat_id, limit, subscription_status):
+    subscription_status = 1 if subscription_status else 0
     # Get the timestamp for the start of the current calendar day
     start_of_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     start_of_day_timestamp = start_of_day.timestamp()
     # Retrieve the message count for the current chat_id from the database
-    cursor.execute('SELECT COUNT(*) FROM messages WHERE chat_id = ? AND role = ? AND timestamp > ?',
-                   (chat_id, 'user', start_of_day_timestamp))
+    cursor.execute('SELECT COUNT(*) FROM messages WHERE chat_id = ? AND role = ? AND subscription_status = ? '
+                   'AND timestamp > ?',
+                   (chat_id, 'user', subscription_status, start_of_day_timestamp))
     message_count = cursor.fetchone()[0]
+    if message_count > limit:
+        message_count = limit
     # get the bonus free messages if exist
     cursor_pay.execute("SELECT bonus_count FROM subscriptions WHERE chat_id = ?", (chat_id,))
     free_message_count = cursor_pay.fetchone()[0]
 
     # print(f"Today {chat_id} had {message_count} messages")
     # Check if the message limit has been reached
+    limit_messages_left = limit - message_count
+    if limit_messages_left <= 0:
+        limit_messages_left = 0
+
     if message_count >= limit:
         if free_message_count <= 0:
-            return False, limit - message_count, free_message_count  # Message limit reached, return False
+            return False, limit_messages_left, free_message_count  # Message limit reached, return False
         else:
-            return True, limit - message_count, free_message_count
-    return True, limit - message_count, free_message_count  # Message within limit, return True
-
-    # TODO Add the selling message for the second or first limit message
+            return True, limit_messages_left, free_message_count
+    return True, limit_messages_left, free_message_count  # Message within limit, return True
 
 
-# TODO Should this be async?
 async def handle_clear_command(chat_id):
     # Update the messages associated with the specified chat_id so they are "cleared"
     # cursor.execute('UPDATE messages SET message = "<Cleared>" WHERE chat_id = ?', (chat_id,))
@@ -166,7 +174,7 @@ async def handle_clear_command(chat_id):
     conn.commit()
 
 
-# TODO Should this be async?
+@retry(attempts=3)
 async def subcribe_channel(chat_id):
     message = f'''
 Кажется, вы еще не подписались на наш книжный канал 'Библионариум'
@@ -176,7 +184,10 @@ async def subcribe_channel(chat_id):
 📲 Чтобы продолжить использование бота, просто подпишитесь на канал! 👌🏼
 '''
     # change to NOT after the test
-    x = await telegram_send_text_with_button(message, chat_id, 'Библионариум', CHANNEL_NAME)
+    try:
+        x = await telegram_send_text_with_button(message, chat_id, 'Библионариум', CHANNEL_NAME)
+    except requests.exceptions.RequestException as e:
+        print('Couldnt send the message with button', e)
 
 
 async def handle_info_command(chat_id, validity, messages_left, free_messages_left):
@@ -230,8 +241,6 @@ async def handle_info_command(chat_id, validity, messages_left, free_messages_le
     except requests.exceptions.RequestException as e:
         print('Coulndt send the info message', e)
 
-# TODO Make a Get subscription status function
-
 
 async def handle_start_command(chat_id, name):
     message = f'''{name}, приветствую!
@@ -252,7 +261,9 @@ async def handle_start_command(chat_id, name):
 
 В бесплатном режиме вам доступно {DAY_LIMIT_PRIVATE} сообщений в сутки. С подпиской лимит увеличивается до {DAY_LIMIT_SUBSCRIPTION}.
 
-Стоимость подписки - 150р в месяц.
+Если друг начнёт пользоваться ботом по реферальной ссылке, вы получите {REFERRAL_BONUS} бонусных сообщений.
+
+Стоимость подписки - {MONTH_SUBSCRIPTION_PRICE}р в месяц.
 
 🔄 Вы можете сбросить беседу, чтобы я не подтягивал из памяти ненужную информацию, для этого есть команда
 /clear.
@@ -266,25 +277,52 @@ async def handle_start_command(chat_id, name):
         print('Coulndt send the welcome message', e)
 
 
-@retry(attempts=3)
+# @retry(attempts=3)
 async def handle_pay_command(chat_id):
     # Set up the payment request
     # данные тестовой карты: 1111 1111 1111 1026, 12/22, CVC 000.
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendInvoice"
+    prices = json.dumps([{"label": "Month subscription", "amount": MONTH_SUBSCRIPTION_PRICE * 100}])
+    provider_data = json.dumps({
+            "receipt": {
+                "items": [
+                    {
+                        "description": "Месячная подписка на Biblionarium GPT Bot",
+                        "quantity": "1",
+                        "amount": {
+                            "value": "100.00",
+                            "currency": "RUB"
+                        },
+                        "vat_code": "1",
+                    }
+                ]
+                # "customer": {
+                #     "email": 'mitinvlad@mail.ru'
+                # }
+            }
+        })
+    # print(prices)
+    description = f'Расширяет лимит сообщений в день до {DAY_LIMIT_SUBSCRIPTION}'
     payload = {
         "chat_id": chat_id,
-        "title": "Подписка",
-        "description": "Месячная подписка",
-        "payload": "payment-payload-test",
-        "provider_token": "381764678:TEST:59292",
-        "start_parameter": "The-Payment-Example",
-        "currency": "rub",
-        "prices": [{"label": "Месячная подписка", "amount": 15000}]
+        "title": "Месячная подписка",
+        "description": description,
+        "payload": "Month_subscription",
+        "need_email": True,
+        "send_email_to_provider": True,
+        "provider_token": PAY_TOKEN_TEST,
+        "provider_data": provider_data,
+        "start_parameter": "The-Payment",
+        "currency": "RUB",
+        "prices": [{"label": "Month subscription", "amount": "10000"}]
     }
     # Send the payment request
+    # print(payload)
     response = requests.post(url, json=payload)
-    print(response)
+    # print(response)
     response.raise_for_status()
+
+# TODO Make several types of subscription
 
 
 # 2b. Function that gets an Image from OpenAI
@@ -359,10 +397,7 @@ async def handle_pre_checkout_query(update):
     }
     response = requests.post(url, json=payload)
     response.raise_for_status()
-    print(f'The id {user_id} paid {total_amount} in {currency} for {invoice_payload}')
-    # [{'update_id': 32981369, 'pre_checkout_query': {'id': '703966766410488648', 'from': {'id': 163905035,
-    # 'is_bot': False, 'first_name': 'Vladimir', 'last_name': 'Smetanin', 'username': 'v_smetanin',
-    # 'language_code': 'ru'}, 'currency': 'RUB', 'total_amount': 15000, 'invoice_payload': 'payment-payload-test'}}]
+    print(f'The id {user_id} is going to pay {total_amount} in {currency} for {invoice_payload}')
 
 
 @retry(attempts=3)
@@ -379,18 +414,25 @@ async def handle_successful_payment(update):
     except requests.exceptions.RequestException as e:
         print('Couldnt send the successfull payment message')
 
-    subscription_start_date = datetime.now()
-    subscription_expiration_date = subscription_start_date + timedelta(days=30)
+    # get the current status of the user
+    conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
+    cursor_pay = conn_pay.cursor()
+    cursor_pay.execute("SELECT subscription_status, start_date, expiration_date FROM subscriptions WHERE chat_id = ?",
+                       (chat_id,))
+    result = cursor_pay.fetchone()
+    current_subscription_status, current_start_date, current_expiration_date = result
+    # if the user doesn't have any subscription
+    if current_subscription_status == 0:
+        subscription_start_date = datetime.now()
+        subscription_expiration_date = subscription_start_date + timedelta(days=31)
+    else:
+        # if the user already has a subscription we copy the start date
+        subscription_start_date = datetime.strptime(current_start_date, '%Y-%m-%d')
+        subscription_expiration_date = datetime.strptime(current_expiration_date, '%Y-%m-%d') + timedelta(days=31)
+
     update_subscription_status(chat_id, 1, subscription_start_date.strftime('%Y-%m-%d'),
                                subscription_expiration_date.strftime('%Y-%m-%d'))
 
-
-# [{'update_id': 32981414, 'message': {'message_id': 17537, 'from': {'id': 163905035, 'is_bot': False, 'first_name':
-# 'Vladimir', 'last_name': 'Smetanin', 'username': 'v_smetanin', 'language_code': 'ru'}, 'chat': {'id': 163905035,
-# 'first_name': 'Vladimir', 'last_name': 'Smetanin', 'username': 'v_smetanin', 'type': 'private'}, 'date': 1686753287,
-# 'successful_payment': {'currency': 'RUB', 'total_amount': 15000, 'invoice_payload': 'payment-payload-test',
-# 'telegram_payment_charge_id': '6041036556_163905035_396022',
-# 'provider_payment_charge_id': '2c1be3c5-000f-5000-a000-1ab7f59323a5'}}}]
 
 
 @retry(attempts=3, delay=3)
@@ -432,6 +474,15 @@ async def parse_updates(result, last_update):
         except Exception as e:
             pass
 
+        try:
+            if result['channel_post']:
+                channel = result['channel_post']['sender_chat']['title']
+                print(f'We have got a channel post in {channel}')
+                last_update = str(int(result['update_id']))
+                return last_update
+        except Exception as e:
+            pass
+
         # Checking for new messages that did not come from chatGPT
         if not result['message']['from']['is_bot']:
             # remember the last update number
@@ -443,6 +494,8 @@ async def parse_updates(result, last_update):
             # check if it's a private chat
             if chat_type == 'private':
                 await handle_private(result)
+            if chat_type == "channel":
+                pass
     return last_update
 
 
@@ -646,7 +699,10 @@ async def handle_private(result):
 
     if SUBSCRIPTION_COMMAND in msg:
         print('We have got a payment request')
-        await handle_pay_command(chat_id)
+        try:
+            await handle_pay_command(chat_id)
+        except Exception as e:
+            print('Couldnt handle the pay command', e)
         return
 
     if REFERRAL_COMMAND in msg:
@@ -659,7 +715,7 @@ async def handle_private(result):
     else:
         limit = DAY_LIMIT_PRIVATE
 
-    validity, messages_left, free_messages_left = await check_message_limit(chat_id, limit)
+    validity, messages_left, free_messages_left = await check_message_limit(chat_id, limit, is_subscription_valid)
     print(f"Subscription for {chat_id} is valid: {is_subscription_valid}, messages left {messages_left}, "
           f"bonus messages left {free_messages_left}")
 
@@ -691,7 +747,7 @@ async def handle_private(result):
     else:
         print(f'{chat_id} is NOT subscribed on channel {CHANNEL_NAME}')
 
-    if channel_subscribed:
+    if channel_subscribed or is_subscription_valid:
         if validity:
             if messages_left <= 0:
                 print('Need to decrease the free messages')
@@ -700,7 +756,7 @@ async def handle_private(result):
             messages = await get_last_messages(chat_id, CONTEXT_DEPTH)
             print(messages)
             # add the last received message to the db
-            await add_private_message_to_db(chat_id, msg, 'user')
+            await add_private_message_to_db(chat_id, msg, 'user', is_subscription_valid)
             # send the last message and the previous historical messages from the db to the GPT
             prompt = msg
 
@@ -719,7 +775,7 @@ async def handle_private(result):
 
             try:
                 bot_response = await openAI(f"{prompt}", MAX_TOKENS, messages)
-                await add_private_message_to_db(chat_id, bot_response, 'assistant')
+                await add_private_message_to_db(chat_id, bot_response, 'assistant', is_subscription_valid)
             except requests.exceptions.RequestException as e:
                 print("Error while waiting for the answer from OpenAI", e)
                 try:
@@ -728,17 +784,12 @@ async def handle_private(result):
                     return
                 except requests.exceptions.RequestException as e:
                     print('Couldnt send the message "smth happend, try later"')
-
             try:
                 # x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
                 # edit the previously sent message "Wait for the answer"
                 x = await edit_bot_message(bot_response,chat_id, sent_msg_id)
             except requests.exceptions.RequestException as e:
                 print('Error in editing message', e)
-            # try:
-            #     x = await telegram_bot_sendtext('I just sent some private message', '163905035', None)
-            # except requests.exceptions.RequestException as e:
-            #     print('Error in sending text to TG', e)
         else:
             print(f'For {chat_id} the day limit is reached')
             try:
@@ -918,12 +969,18 @@ def check_subscription_validity(chat_id):
                        (chat_id,))
     result = cursor_pay.fetchone()
     if result is not None:
-        subscription_status, start_date, expiration_date = result
+        subscription_status, start_date_text, expiration_date_text = result
         if subscription_status == 1:
-            start_date = datetime.strptime(start_date, '%Y-%m-%d')
-            expiration_date = datetime.strptime(expiration_date, '%Y-%m-%d')
+            # the date has not yet expired
+            start_date = datetime.strptime(start_date_text, '%Y-%m-%d')
+            expiration_date = datetime.strptime(expiration_date_text, '%Y-%m-%d')
+            # check if the subccription has ended
             if start_date <= datetime.now() <= expiration_date:
                 return True
+            # the date is expired, fill in the old dates but change the status
+            else:
+                update_subscription_status(chat_id, 0, start_date_text, expiration_date_text)
+                return False
     return False
 
 
@@ -982,13 +1039,6 @@ conn_pay.close()
 
 # TODO Add referral bonus for payment
 
-# TODO Add free use condition - subscribe to Biblionarium
+# TODO Add the mode when each day the bot sends a literature question via the ChatGPT
 
-
-# Я дружелюбный бот (на основе ChatGPT), который любит подробно объяснять вещи и внимательно относится к истории беседы.
-# Можешь спросить меня про многие вещи, например:
-# -написать программный код
-# -написать отзыв, рассказ или письмо
-# Я могу поддержать беседу, рассказать анекдот, успокоить.
-# Я пока не умею заказывать вещи, напоминать.
-# Я могу работать с файлами, интернетом, рисовать.
+# TODO Fix the amount of left messages
