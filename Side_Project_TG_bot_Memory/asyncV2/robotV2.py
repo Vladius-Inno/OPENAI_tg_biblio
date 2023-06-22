@@ -96,7 +96,6 @@ async def openAI(prompt, max_tokens, messages):
     if messages is None:
         messages = []
     messages.append({"role": "user", "content": prompt})
-    # TODO Add the system message as a role setting
     print("openAI sending request", prompt)
     response = requests.post(
         'https://api.openai.com/v1/chat/completions',
@@ -322,8 +321,6 @@ async def handle_pay_command(chat_id):
     # print(response)
     response.raise_for_status()
 
-# TODO Make several types of subscription
-
 
 # 2b. Function that gets an Image from OpenAI
 # async def openAImage(prompt):
@@ -432,7 +429,6 @@ async def handle_successful_payment(update):
 
     update_subscription_status(chat_id, 1, subscription_start_date.strftime('%Y-%m-%d'),
                                subscription_expiration_date.strftime('%Y-%m-%d'))
-
 
 
 @retry(attempts=3, delay=3)
@@ -1041,4 +1037,8 @@ conn_pay.close()
 
 # TODO Add the mode when each day the bot sends a literature question via the ChatGPT
 
-# TODO Fix the amount of left messages
+# TODO Fix the errors when a nontext message is received
+
+# TODO Make several types of subscription
+
+# TODO Add the system message as a role setting
