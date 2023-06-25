@@ -46,9 +46,9 @@ REFERRAL_COMMAND = '/refer'
 SUBSCRIPTION_COMMAND = '/pay'
 SUBSCRIPTION_DATABASE = 'subscriptions.db'
 MESSAGES_DATABASE = 'messages.db'
-BOT_NAME = 'biblionarium_chatgpt_bot'
-PAY_TOKEN_TEST = "381764678:TEST:59292"
-SBER_TOKEN_TEST = "401643678:TEST:266f8c81-0fc1-46ac-b57f-64a5fcc97616"
+BOT_NAME = os.environ['BOT_NAME']
+PAY_TOKEN_TEST = os.environ['PAY_TOKEN_TEST']
+# SBER_TOKEN_TEST = "401643678:TEST:266f8c81-0fc1-46ac-b57f-64a5fcc97616"
 # Номер карты	2200 0000 0000 0053
 # Дата истечения срока действия	2024/12
 # Проверочный код на обратной стороне	123
