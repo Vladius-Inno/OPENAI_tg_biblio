@@ -1042,3 +1042,9 @@ conn_pay.close()
 # TODO Make several types of subscription
 
 # TODO Add the system message as a role setting
+
+# TODO Integration with fantlab - title, description and so on
+
+# TODO Show the similars from Fantlab
+
+# TODO Add recomendations and ask for like|dislike, then tune the model on the results
