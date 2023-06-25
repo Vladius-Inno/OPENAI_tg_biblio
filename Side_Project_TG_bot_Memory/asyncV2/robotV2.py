@@ -42,6 +42,7 @@ CLEAR_COMMAND = '/clear'
 START_COMMAND = '/start'
 INFO_COMMAND = '/info'
 REFERRAL_COMMAND = '/refer'
+HELP_COMMAND = '/help'
 
 SUBSCRIPTION_COMMAND = '/pay'
 SUBSCRIPTION_DATABASE = 'subscriptions.db'
@@ -56,7 +57,7 @@ PAY_TOKEN_TEST = os.environ['PAY_TOKEN_TEST']
 CHANNEL_NAME = 'Biblionarium'
 DAY_LIMIT_PRIVATE = 10  # base is 10
 DAY_LIMIT_SUBSCRIPTION = 100
-CONTEXT_DEPTH = 3 * 2  # twice the context, because we get the users and the bots messages, base would be 10 * 2
+CONTEXT_DEPTH = 5 * 2  # twice the context, because we get the users and the bots messages, base would be 10 * 2
 MAX_TOKENS = 500
 REFERRAL_BONUS = 30  # free messages that are used after the limit is over, base is 30
 MONTH_SUBSCRIPTION_PRICE = 150
@@ -289,7 +290,7 @@ async def handle_pay_command(chat_id):
                         "description": "Месячная подписка на Biblionarium GPT Bot",
                         "quantity": "1",
                         "amount": {
-                            "value": "100.00",
+                            "value": f"{MONTH_SUBSCRIPTION_PRICE}.00",
                             "currency": "RUB"
                         },
                         "vat_code": "1",
@@ -313,7 +314,7 @@ async def handle_pay_command(chat_id):
         "provider_data": provider_data,
         "start_parameter": "The-Payment",
         "currency": "RUB",
-        "prices": [{"label": "Month subscription", "amount": "10000"}]
+        "prices": [{"label": "Месячная подписка", "amount": "15000"}]
     }
     # Send the payment request
     # print(payload)
@@ -353,6 +354,21 @@ async def handle_refer_command(chat_id):
     except requests.exceptions.RequestException as e:
         print('Coulndt send the info message', e)
 
+
+async def handle_help_command(chat_id):
+    message = f'''
+Напишите ваш запрос и получите ответ от ChatGPT. Бот генерирует текст в формате диалога, он запоминает и понимает контекст в рамках 5 предыдущих сообщений.
+ 
+Бот может быть экспертом, ассистентом - нужно только сообщить ему об этом. 
+
+Очистить контекст можно при помощи команды /clear.
+
+По всем вопросам - @v_smetanin
+        '''
+    try:
+        x = await telegram_bot_sendtext(message, chat_id, None)
+    except requests.exceptions.RequestException as e:
+        print('Coulndt send the help message', e)
 
 @retry(attempts=3, delay=3)
 async def edit_bot_message(text, chat_id, message_id ):
@@ -714,6 +730,10 @@ async def handle_private(result):
 
     if REFERRAL_COMMAND in msg:
         await handle_refer_command(chat_id)
+        return
+
+    if HELP_COMMAND in msg:
+        await handle_help_command(chat_id)
         return
 
     is_subscription_valid = check_subscription_validity(chat_id)
