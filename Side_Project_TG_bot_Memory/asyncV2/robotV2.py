@@ -83,6 +83,19 @@ cursor_pay.execute('''CREATE TABLE IF NOT EXISTS subscriptions
 conn_pay.commit()
 
 
+async def setup_keyboard(chat_id):
+    keyboard = [
+        ['Button 1', 'Button 2'],
+        ['Button 3', 'Button 4'],
+    ]
+    reply_markup = json.dumps({'keyboard': keyboard, 'resize_keyboard': True})
+
+    url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
+    params = {'chat_id': chat_id, 'text': "Testing the keyboard", 'reply_markup': reply_markup}
+    response = requests.post(url, json=params)
+    return response.json()
+
+
 # Make the request to the OpenAI API
 @retry(attempts=3, delay=3)
 async def openAI(prompt, max_tokens, messages):
@@ -786,7 +799,7 @@ async def handle_private(result):
             await add_private_message_to_db(chat_id, msg, 'user', is_subscription_valid)
             # send the last message and the previous historical messages from the db to the GPT
             prompt = msg
-
+            # x = await setup_keyboard(chat_id)
             # send the quick message to the user, which shows that we start thinking
             try:
                 x = await telegram_bot_sendtext("⏳ Ожидайте ответа от бота...", chat_id, msg_id)
@@ -1056,8 +1069,6 @@ conn.close()
 cursor_pay.close()
 conn_pay.close()
 
-# TODO add the /help command
-
 # TODO Make bot send postponed messages
 
 # TODO Make GPT wrap what is supposed to be sent to user, like "Tell him that he has two days left"..
@@ -1068,17 +1079,9 @@ conn_pay.close()
 
 # TODO Add the mode when each day the bot sends a literature question via the ChatGPT
 
-# TODO Fix the errors when a nontext message is received
-
 # TODO Make several types of subscription
 
 # TODO Add the system message as a role setting
-
-# TODO Integration with fantlab - title, description and so on
-
-# TODO Show the similars from Fantlab
-
-# TODO Add recomendations and ask for like|dislike, then tune the model on the results
 
 # TODO Integration with fantlab - title, description and so on
 
