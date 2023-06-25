@@ -3,7 +3,6 @@
 
 # But not these files...
 !.gitignore
-!README.md
 !memory.py
 !research.py
 !robotV2.py
