@@ -309,7 +309,7 @@ async def handle_pay_command(chat_id):
         "payload": "Month_subscription",
         "need_email": True,
         "send_email_to_provider": True,
-        "provider_token": PAY_TOKEN_TEST,
+        "provider_token": PAY_TOKEN,
         "provider_data": provider_data,
         "start_parameter": "The-Payment",
         "currency": "RUB",
