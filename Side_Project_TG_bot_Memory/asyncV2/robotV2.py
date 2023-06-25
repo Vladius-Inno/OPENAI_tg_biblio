@@ -639,6 +639,17 @@ async def handle_private(result):
 
     chat_id = str(result['message']['chat']['id'])
     msg_id = str(int(result['message']['message_id']))
+
+    # check if we got the text, else skip
+    if not 'text' in result['message']:
+        print('Got the non-text message')
+        try:
+            x = await telegram_bot_sendtext("Извините, пока что я умею обрабатывать только текст",
+                                            chat_id, msg_id)
+        except requests.exceptions.RequestException as e:
+            print('Error in sending text to TG', e)
+        return
+
     msg = result['message']['text']
 
     if not user_exists(chat_id):
