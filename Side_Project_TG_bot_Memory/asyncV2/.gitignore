@@ -12,8 +12,10 @@
 !*/
 
 # if the files to be tracked are in subdirectories
-#!*/a/b/file1.txt
-#!*/a/b/c/*
+!*/asyncV2/.gitignore
+!*/asyncV2/memory.py
+!*/asyncV2/research.py
+!*/asyncV2/robotV2.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
