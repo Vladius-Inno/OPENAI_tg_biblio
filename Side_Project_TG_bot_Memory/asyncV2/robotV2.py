@@ -1048,3 +1048,9 @@ conn_pay.close()
 # TODO Show the similars from Fantlab
 
 # TODO Add recomendations and ask for like|dislike, then tune the model on the results
+
+# TODO Integration with fantlab - title, description and so on
+
+# TODO Show the similars from Fantlab
+
+# TODO Add recomendations and ask for like|dislike, then tune the model on the results
