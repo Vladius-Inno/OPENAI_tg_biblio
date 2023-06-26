@@ -1061,13 +1061,24 @@ async def main():
         await ChatGPTbot()
         await asyncio.sleep(5)
 
-loop = asyncio.get_event_loop()
-loop.run_until_complete(main())
+if __name__ == '__main__':
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        cursor.close()
+        conn.close()
+        cursor_pay.close()
+        conn_pay.close()
 
-cursor.close()
-conn.close()
-cursor_pay.close()
-conn_pay.close()
+# loop = asyncio.get_event_loop()
+# loop.run_until_complete(main())
+
+# cursor.close()
+# conn.close()
+# cursor_pay.close()
+# conn_pay.close()
 
 # TODO Make bot send postponed messages
 
