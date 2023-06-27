@@ -508,6 +508,15 @@ async def parse_updates(result, last_update):
         except Exception as e:
             pass
 
+        try:
+            if result['edited_channel_post']:
+                channel = result['edited_channel_post']['sender_chat']['title']
+                print(f'We have got a channel post in {channel}')
+                last_update = str(int(result['update_id']))
+                return last_update
+        except Exception as e:
+            pass
+
         # Checking for new messages that did not come from chatGPT
         if not result['message']['from']['is_bot']:
             # remember the last update number
