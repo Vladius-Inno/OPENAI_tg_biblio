@@ -511,7 +511,7 @@ async def parse_updates(result, last_update):
         try:
             if result['edited_channel_post']:
                 channel = result['edited_channel_post']['sender_chat']['title']
-                print(f'We have got a channel post in {channel}')
+                print(f'We have got a update to a channel post in {channel}')
                 last_update = str(int(result['update_id']))
                 return last_update
         except Exception as e:
@@ -1068,7 +1068,11 @@ async def ChatGPTbot():
 async def main():
     while True:
         await ChatGPTbot()
-        await asyncio.sleep(5)
+        try:
+            await asyncio.sleep(5)
+        except TypeError as e:
+            print('The problem in sleep', e)
+
 
 if __name__ == '__main__':
     loop = asyncio.new_event_loop()
