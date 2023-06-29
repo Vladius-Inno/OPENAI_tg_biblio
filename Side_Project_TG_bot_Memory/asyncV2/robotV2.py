@@ -55,6 +55,7 @@ PAY_TOKEN_TEST = os.environ['PAY_TOKEN_TEST']
 # Проверочный код на обратной стороне	123
 
 CHANNEL_NAME = 'Biblionarium'
+CHANNEL_NAME_RUS = "Библионариум"
 DAY_LIMIT_PRIVATE = 10  # base is 10
 DAY_LIMIT_SUBSCRIPTION = 100
 CONTEXT_DEPTH = 5 * 2  # twice the context, because we get the users and the bots messages, base would be 10 * 2
@@ -62,6 +63,37 @@ MAX_TOKENS = 500
 REFERRAL_BONUS = 30  # free messages that are used after the limit is over, base is 30
 MONTH_SUBSCRIPTION_PRICE = 150
 file = 'ClockworkOrange.txt'  # the current book loaded file
+
+KEYBOARD = {
+    'keyboard':
+[
+    [
+        {'text': 'Option 1', 'callback_data': 'option1'},
+        {'text': 'Option 2', 'callback_data': 'option2'}
+    ],
+    [
+        {'text': 'Option 3', 'callback_data': 'option3'}
+    ]
+],
+    'resize_keyboard': True,  # Allow the keyboard to be resized
+
+}
+# the markup for the button for the subscribe to channel
+keyboard_subscribe = {
+    'inline_keyboard': [[
+        {'text': CHANNEL_NAME_RUS, 'url': f't.me/{CHANNEL_NAME}'}  # Button with link to the channel
+    ]]
+}
+
+# keyboard = [
+#     [
+#         {'text': 'Option 1', 'callback_data': 'option1'},
+#         {'text': 'Option 2', 'callback_data': 'option2'}
+#     ],
+#     [
+#         {'text': 'Option 3', 'callback_data': 'option3'}
+#     ]
+# ]
 
 conn = sqlite3.connect(MESSAGES_DATABASE)
 cursor = conn.cursor()
@@ -81,19 +113,6 @@ cursor_pay.execute('''CREATE TABLE IF NOT EXISTS subscriptions
                  (chat_id INTEGER PRIMARY KEY, subscription_status INTEGER, revealed_date  TEXT, start_date TEXT, 
                  expiration_date TEXT, referral_link TEXT, referred_by TEXT, bonus_count INTEGER DEFAULT 0)''')
 conn_pay.commit()
-
-
-async def setup_keyboard(chat_id):
-    keyboard = [
-        ['Button 1', 'Button 2'],
-        ['Button 3', 'Button 4'],
-    ]
-    reply_markup = json.dumps({'keyboard': keyboard, 'resize_keyboard': True})
-
-    url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
-    params = {'chat_id': chat_id, 'text': "Testing the keyboard", 'reply_markup': reply_markup}
-    response = requests.post(url, json=params)
-    return response.json()
 
 
 # Make the request to the OpenAI API
@@ -198,7 +217,7 @@ async def subcribe_channel(chat_id):
 '''
     # change to NOT after the test
     try:
-        x = await telegram_send_text_with_button(message, chat_id, 'Библионариум', CHANNEL_NAME)
+        x = await telegram_bot_sendtext(message, chat_id, None, keyboard_subscribe)
     except requests.exceptions.RequestException as e:
         print('Couldnt send the message with button', e)
 
@@ -383,14 +402,17 @@ async def handle_help_command(chat_id):
     except requests.exceptions.RequestException as e:
         print('Coulndt send the help message', e)
 
+
 @retry(attempts=3, delay=3)
-async def edit_bot_message(text, chat_id, message_id ):
+async def edit_bot_message(text, chat_id, message_id, reply_markup=None):
     url = f'https://api.telegram.org/bot{BOT_TOKEN}/editMessageText'
     payload = {
         'chat_id': chat_id,
         'message_id': message_id,
         'text': text
+        # 'reply_markup': reply_markup
     }
+    print('Editing', payload)
     response = requests.post(url, json=payload, timeout=20)
     response.raise_for_status()
     print("Edited the message in TG", response)
@@ -828,7 +850,7 @@ async def handle_private(result):
             except requests.exceptions.RequestException as e:
                 print("Error while waiting for the answer from OpenAI", e)
                 try:
-                    x = await edit_bot_message("Кажется, что-то случилось... Пожалуйста, отправьте запрос повторно",
+                    x = await telegram_bot_sendtext("Кажется, что-то случилось... Пожалуйста, отправьте запрос повторно",
                                                chat_id, msg_id)
                     return
                 except requests.exceptions.RequestException as e:
@@ -836,7 +858,7 @@ async def handle_private(result):
             try:
                 # x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
                 # edit the previously sent message "Wait for the answer"
-                x = await edit_bot_message(bot_response,chat_id, sent_msg_id)
+                x = await edit_bot_message(bot_response,chat_id, sent_msg_id, KEYBOARD)
             except requests.exceptions.RequestException as e:
                 print('Error in editing message', e)
         else:
@@ -853,17 +875,24 @@ async def handle_private(result):
 
 # Sending a message to a specific telegram group
 @retry(attempts=3, delay=3)
-async def telegram_bot_sendtext(bot_message, chat_id, msg_id):
-    data = {
+async def telegram_bot_sendtext(bot_message, chat_id, msg_id, reply_markup=None):
+
+    payload = {
         'chat_id': chat_id,
         'text': bot_message,
         'reply_to_message_id': msg_id
     }
-    print("TG sending the text", data)
+
+    # Convert the keyboard dictionary to JSON string and add to the payload
+    if reply_markup:
+        reply_markup = json.dumps(reply_markup)
+        payload['reply_markup'] = reply_markup
+
+    print("TG sending the text", payload)
     response = None
     response = requests.post(
         'https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage',
-        json=data, timeout=10
+        json=payload, timeout=10
     )
     response.raise_for_status()  # Raises an exception for non-2xx status codes
     print("TG sent the data", response)
@@ -890,6 +919,17 @@ async def telegram_send_text_with_button(message_text, chat_id, button_text, cha
     # Send the API request
     response = requests.post(api_url, params=params)
     response.raise_for_status()
+
+
+# async def setup_keyboard(txt, chat_id):
+#
+#     reply_markup = json.dumps({'keyboard': keyboard, 'resize_keyboard': True})
+#
+#     url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
+#     payload = {'chat_id': chat_id, 'text': txt, 'reply_markup': reply_markup}
+#     response = requests.post(url, json=payload)
+#     return response.json()
+
 
 # Sending a image to a specific telegram group
 # async def telegram_bot_sendimage(image_url, group_id, msg_id):
