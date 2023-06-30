@@ -47,6 +47,7 @@ HELP_COMMAND = '/help'
 SUBSCRIPTION_COMMAND = '/pay'
 SUBSCRIPTION_DATABASE = 'subscriptions.db'
 MESSAGES_DATABASE = 'messages.db'
+OPTIONS_DATABASE = 'options.db'
 BOT_NAME = os.environ['BOT_NAME']
 PAY_TOKEN_TEST = os.environ['PAY_TOKEN_TEST']
 # SBER_TOKEN_TEST = "401643678:TEST:266f8c81-0fc1-46ac-b57f-64a5fcc97616"
@@ -64,20 +65,35 @@ REFERRAL_BONUS = 30  # free messages that are used after the limit is over, base
 MONTH_SUBSCRIPTION_PRICE = 150
 file = 'ClockworkOrange.txt'  # the current book loaded file
 
-KEYBOARD = {
-    'keyboard':
-[
-    [
-        {'text': 'Option 1', 'callback_data': 'option1'},
-        {'text': 'Option 2', 'callback_data': 'option2'}
-    ],
-    [
-        {'text': 'Option 3', 'callback_data': 'option3'}
-    ]
-],
-    'resize_keyboard': True,  # Allow the keyboard to be resized
+CHECK_MARK = '✅ '
+LITERATURE_EXPERT_ROLE = 'literature_expert'  # 'Лит.эксперт 📖'
+DEFAULT_ROLE = 'default_role'  # Без роли ☝️'
+ROLES = [DEFAULT_ROLE, LITERATURE_EXPERT_ROLE]
 
-}
+
+def keyboard(chat_id):
+
+    # get the gpt_role
+    cursor_opt.execute("SELECT gpt_role FROM options WHERE chat_id = ?", (chat_id,))
+    gpt_role = cursor_opt.fetchone()[0]
+    role_position = ROLES.index(gpt_role)
+    print('role positions', role_position)
+    role_array = [1 if x == role_position else 0 for x in range(len(ROLES))]
+    print('role array', role_array)
+    keyboard_markup = {
+        'keyboard':
+            [
+                [
+                    {'text': CHECK_MARK * role_array[0] + DEFAULT_ROLE, 'callback_data': 'default_role'},
+                    {'text': CHECK_MARK * role_array[1] + LITERATURE_EXPERT_ROLE, 'callback_data': 'literature_expert_role'}
+                ]
+            ],
+        'resize_keyboard': True,  # Allow the keyboard to be resized
+        'one_time_keyboard': True  # Requests clients to hide the keyboard as soon as it's been used
+    }
+    return keyboard_markup
+
+
 # the markup for the button for the subscribe to channel
 keyboard_subscribe = {
     'inline_keyboard': [[
@@ -85,21 +101,14 @@ keyboard_subscribe = {
     ]]
 }
 
-# keyboard = [
-#     [
-#         {'text': 'Option 1', 'callback_data': 'option1'},
-#         {'text': 'Option 2', 'callback_data': 'option2'}
-#     ],
-#     [
-#         {'text': 'Option 3', 'callback_data': 'option3'}
-#     ]
-# ]
-
 conn = sqlite3.connect(MESSAGES_DATABASE)
 cursor = conn.cursor()
 
 conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
 cursor_pay = conn_pay.cursor()
+
+conn_opt = sqlite3.connect(OPTIONS_DATABASE)
+cursor_opt = conn_opt.cursor()
 
 # Create a table to store messages
 cursor.execute('''CREATE TABLE IF NOT EXISTS messages
@@ -113,6 +122,13 @@ cursor_pay.execute('''CREATE TABLE IF NOT EXISTS subscriptions
                  (chat_id INTEGER PRIMARY KEY, subscription_status INTEGER, revealed_date  TEXT, start_date TEXT, 
                  expiration_date TEXT, referral_link TEXT, referred_by TEXT, bonus_count INTEGER DEFAULT 0)''')
 conn_pay.commit()
+
+
+# Create a table of options
+cursor_opt.execute(f'''CREATE TABLE IF NOT EXISTS options
+                  (id INTEGER PRIMARY KEY, chat_id INTEGER, gpt_role TEXT DEFAULT lol,  
+                  FOREIGN KEY (chat_id) REFERENCES subscriptions (chat_id))''')
+conn_opt.commit()
 
 
 # Make the request to the OpenAI API
@@ -304,7 +320,7 @@ async def handle_start_command(chat_id, name):
 
 Спасибо! '''
     try:
-        x = await telegram_bot_sendtext(message, chat_id, None)
+        x = await telegram_bot_sendtext(message, chat_id, None, keyboard(chat_id))
     except requests.exceptions.RequestException as e:
         print('Coulndt send the welcome message', e)
 
@@ -404,14 +420,14 @@ async def handle_help_command(chat_id):
 
 
 @retry(attempts=3, delay=3)
-async def edit_bot_message(text, chat_id, message_id, reply_markup=None):
+async def edit_bot_message(text, chat_id, message_id):
     url = f'https://api.telegram.org/bot{BOT_TOKEN}/editMessageText'
     payload = {
         'chat_id': chat_id,
         'message_id': message_id,
         'text': text
-        # 'reply_markup': reply_markup
-    }
+     }
+
     print('Editing', payload)
     response = requests.post(url, json=payload, timeout=20)
     response.raise_for_status()
@@ -746,7 +762,7 @@ async def handle_private(result):
             await handle_clear_command(chat_id)
             try:
                 x = await telegram_bot_sendtext("Диалог сброшен",
-                                                chat_id, msg_id)
+                                                chat_id, msg_id, keyboard(chat_id))
             except requests.exceptions.RequestException as e:
                 print('Error in sending text to TG', e)
             return
@@ -830,7 +846,6 @@ async def handle_private(result):
             await add_private_message_to_db(chat_id, msg, 'user', is_subscription_valid)
             # send the last message and the previous historical messages from the db to the GPT
             prompt = msg
-            # x = await setup_keyboard(chat_id)
             # send the quick message to the user, which shows that we start thinking
             try:
                 x = await telegram_bot_sendtext("⏳ Ожидайте ответа от бота...", chat_id, msg_id)
@@ -858,7 +873,7 @@ async def handle_private(result):
             try:
                 # x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
                 # edit the previously sent message "Wait for the answer"
-                x = await edit_bot_message(bot_response,chat_id, sent_msg_id, KEYBOARD)
+                x = await edit_bot_message(bot_response,chat_id, sent_msg_id)
             except requests.exceptions.RequestException as e:
                 print('Error in editing message', e)
         else:
@@ -899,26 +914,36 @@ async def telegram_bot_sendtext(bot_message, chat_id, msg_id, reply_markup=None)
     return response.json()
 
 
-@retry(attempts=3, delay=5)
-async def telegram_send_text_with_button(message_text, chat_id, button_text, channel_username):
-    api_url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
-    # Create the inline keyboard button
-    keyboard = {
-        'inline_keyboard': [[
-            {'text': button_text, 'url': f't.me/{channel_username}'}  # Button with link to the channel
-        ]]
-    }
-    # Convert the keyboard dictionary to JSON string
-    reply_markup = json.dumps(keyboard)
-    # Set the parameters for the API request
-    params = {
-        'chat_id': chat_id,
-        'text': message_text,
-        'reply_markup': reply_markup
-    }
-    # Send the API request
-    response = requests.post(api_url, params=params)
-    response.raise_for_status()
+# Function to handle the callback query
+def handle_callback_query(callback_query):
+    callback_data = callback_query['data']
+    chat_id = callback_query['message']['chat']['id']
+
+    if callback_data == 'default_role':
+        print('got the default role')
+    if callback_query == 'literature_expert':
+        print('got the literature expert role')
+
+# @retry(attempts=3, delay=5)
+# async def telegram_send_text_with_button(message_text, chat_id, button_text, channel_username):
+#     api_url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
+#     # Create the inline keyboard button
+#     keyboard = {
+#         'inline_keyboard': [[
+#             {'text': button_text, 'url': f't.me/{channel_username}'}  # Button with link to the channel
+#         ]]
+#     }
+#     # Convert the keyboard dictionary to JSON string
+#     reply_markup = json.dumps(keyboard)
+#     # Set the parameters for the API request
+#     params = {
+#         'chat_id': chat_id,
+#         'text': message_text,
+#         'reply_markup': reply_markup
+#     }
+#     # Send the API request
+#     response = requests.post(api_url, params=params)
+#     response.raise_for_status()
 
 
 # async def setup_keyboard(txt, chat_id):
@@ -976,6 +1001,14 @@ def add_new_user(user_id):
     cursor_pay.execute("INSERT INTO subscriptions (chat_id, subscription_status, revealed_date, referral_link) "
                        "VALUES (?, 0, ?, ?)", (user_id, revealed_date, referral_link))
     conn_pay.commit()
+
+    conn_opt = sqlite3.connect(OPTIONS_DATABASE)
+    cursor_opt = conn_opt.cursor()
+    role = DEFAULT_ROLE
+    # Add a new user default role
+    cursor_opt.execute("INSERT INTO options (chat_id, gpt_role) "
+                       "VALUES (?, ?)", (user_id, role))
+    conn_opt.commit()
 
 
 async def add_reffered_by(chat_id, referree):
