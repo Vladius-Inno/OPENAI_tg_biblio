@@ -66,16 +66,37 @@ MONTH_SUBSCRIPTION_PRICE = 150
 file = 'ClockworkOrange.txt'  # the current book loaded file
 
 CHECK_MARK = '✅ '
-LITERATURE_EXPERT_ROLE = 'literature_expert'  # 'Лит.эксперт 📖'
-DEFAULT_ROLE = 'default_role'  # Без роли ☝️'
+LITERATURE_EXPERT_ROLE = 'literature_expert'
+LITERATURE_EXPERT_ROLE_RUS = 'Лит.эксперт 📖'
+DEFAULT_ROLE = 'default_role'
+DEFAULT_ROLE_RUS = 'Без роли ☝️'
 ROLES = [DEFAULT_ROLE, LITERATURE_EXPERT_ROLE]
+ROLES_RUS = [DEFAULT_ROLE_RUS, LITERATURE_EXPERT_ROLE_RUS]
+ROLES_ZIP = {ROLES[i]: ROLES_RUS[i] for i in range(len(ROLES))}
+
+LIT_PROMPT = '''
+You act as a literature expert. You are proficient in recommendations and specialize in all literature. You are best in Sci-fi.
+If you lack information from a user, you ask additional questions. You obey the 4 rules:
+1. Answer in Russian language.
+2. If you don't know the answer - you ask for more information from the user. If you still don't know - you say that you don't know the answer.
+3. If you have to name the book title you always provide the russian and the english title of the book in parenthesis if it exists. 
+4. if you are not sure about the recommendation - you don't provide it.
+'''
 
 
-def keyboard(chat_id):
-
+def check_role(chat_id):
     # get the gpt_role
     cursor_opt.execute("SELECT gpt_role FROM options WHERE chat_id = ?", (chat_id,))
-    gpt_role = cursor_opt.fetchone()[0]
+    try:
+        gpt_role = cursor_opt.fetchone()[0]
+    except Exception:
+        gpt_role = DEFAULT_ROLE
+    return gpt_role
+
+
+def set_keyboard(chat_id):
+    # get the gpt_role
+    gpt_role = check_role(chat_id)
     role_position = ROLES.index(gpt_role)
     print('role positions', role_position)
     role_array = [1 if x == role_position else 0 for x in range(len(ROLES))]
@@ -84,8 +105,8 @@ def keyboard(chat_id):
         'keyboard':
             [
                 [
-                    {'text': CHECK_MARK * role_array[0] + DEFAULT_ROLE, 'callback_data': 'default_role'},
-                    {'text': CHECK_MARK * role_array[1] + LITERATURE_EXPERT_ROLE, 'callback_data': 'literature_expert_role'}
+                    {'text': CHECK_MARK * role_array[0] + DEFAULT_ROLE_RUS, 'callback_data': 'default_role'},
+                    {'text': CHECK_MARK * role_array[1] + LITERATURE_EXPERT_ROLE_RUS, 'callback_data': 'literature_expert_role'}
                 ]
             ],
         'resize_keyboard': True,  # Allow the keyboard to be resized
@@ -131,9 +152,22 @@ cursor_opt.execute(f'''CREATE TABLE IF NOT EXISTS options
 conn_opt.commit()
 
 
+async def setup_role(chat_id, role, silent=False):
+    # Add a gpt_role into the database
+    cursor_opt.execute("UPDATE options SET gpt_role = ? WHERE chat_id = ?", (role, chat_id))
+    conn_opt.commit()
+    print(f'role {role} fro {chat_id} is set')
+    role_rus = ROLES_ZIP[role]
+    if not silent:
+        try:
+            x = await telegram_bot_sendtext(f'Установлена роль: {role_rus}', chat_id, None, set_keyboard(chat_id))
+        except requests.exceptions.RequestException as e:
+            print('Coulndt send the set up role text', e)
+
+
 # Make the request to the OpenAI API
 @retry(attempts=3, delay=3)
-async def openAI(prompt, max_tokens, messages):
+async def openAI(prompt, max_tokens, messages, gpt_role):
     # the example
     # messages = [
     #     {"role": "system", "content": "You are a helpful assistant."},
@@ -144,6 +178,10 @@ async def openAI(prompt, max_tokens, messages):
     # if we don't get the history for the chat, then we create the list which append with the prompt
     if messages is None:
         messages = []
+
+    if gpt_role == LITERATURE_EXPERT_ROLE:
+        messages.append({"role": "system", "content": LIT_PROMPT})
+
     messages.append({"role": "user", "content": prompt})
     print("openAI sending request", prompt)
     response = requests.post(
@@ -319,8 +357,10 @@ async def handle_start_command(chat_id, name):
 ❕ Если я вам не отвечаю, перезапустите меня командой /start
 
 Спасибо! '''
+    await setup_role(chat_id, DEFAULT_ROLE, silent=True)
+
     try:
-        x = await telegram_bot_sendtext(message, chat_id, None, keyboard(chat_id))
+        x = await telegram_bot_sendtext(message, chat_id, None, set_keyboard(chat_id))
     except requests.exceptions.RequestException as e:
         print('Coulndt send the welcome message', e)
 
@@ -762,7 +802,7 @@ async def handle_private(result):
             await handle_clear_command(chat_id)
             try:
                 x = await telegram_bot_sendtext("Диалог сброшен",
-                                                chat_id, msg_id, keyboard(chat_id))
+                                                chat_id, msg_id, set_keyboard(chat_id))
             except requests.exceptions.RequestException as e:
                 print('Error in sending text to TG', e)
             return
@@ -794,6 +834,14 @@ async def handle_private(result):
 
     if HELP_COMMAND in msg:
         await handle_help_command(chat_id)
+        return
+
+    if LITERATURE_EXPERT_ROLE_RUS in msg:
+        await setup_role(chat_id, LITERATURE_EXPERT_ROLE)
+        return
+
+    if DEFAULT_ROLE_RUS in msg:
+        await setup_role(chat_id, DEFAULT_ROLE)
         return
 
     is_subscription_valid = check_subscription_validity(chat_id)
@@ -858,9 +906,9 @@ async def handle_private(result):
                 await set_typing_status(chat_id)
             except requests.exceptions.RequestException as e:
                 print('Couldnt set the typing status', e)
-
+            gpt_role = check_role(chat_id)
             try:
-                bot_response = await openAI(f"{prompt}", MAX_TOKENS, messages)
+                bot_response = await openAI(f"{prompt}", MAX_TOKENS, messages, gpt_role)
                 await add_private_message_to_db(chat_id, bot_response, 'assistant', is_subscription_valid)
             except requests.exceptions.RequestException as e:
                 print("Error while waiting for the answer from OpenAI", e)
@@ -1140,7 +1188,10 @@ async def ChatGPTbot():
 
 async def main():
     while True:
-        await ChatGPTbot()
+        try:
+            await ChatGPTbot()
+        except TypeError as e:
+            print('Typeerror', e)
         try:
             await asyncio.sleep(5)
         except TypeError as e:
