@@ -57,12 +57,12 @@ PAY_TOKEN_TEST = os.environ['PAY_TOKEN_TEST']
 
 CHANNEL_NAME = 'Biblionarium'
 CHANNEL_NAME_RUS = "Библионариум"
-DAY_LIMIT_PRIVATE = 10  # base is 10
-DAY_LIMIT_SUBSCRIPTION = 100
+DAY_LIMIT_PRIVATE = 15  # base is 10
+DAY_LIMIT_SUBSCRIPTION = 60
 CONTEXT_DEPTH = 5 * 2  # twice the context, because we get the users and the bots messages, base would be 10 * 2
-MAX_TOKENS = 500
+MAX_TOKENS = 800
 REFERRAL_BONUS = 30  # free messages that are used after the limit is over, base is 30
-MONTH_SUBSCRIPTION_PRICE = 150
+MONTH_SUBSCRIPTION_PRICE = 170
 file = 'ClockworkOrange.txt'  # the current book loaded file
 
 CHECK_MARK = '✅ '
@@ -75,11 +75,16 @@ ROLES_RUS = [DEFAULT_ROLE_RUS, LITERATURE_EXPERT_ROLE_RUS]
 ROLES_ZIP = {ROLES[i]: ROLES_RUS[i] for i in range(len(ROLES))}
 
 LIT_PROMPT = '''
-You act as a literature expert. You are proficient in recommendations and specialize in all literature. You are best in Sci-fi.
-If you lack information from a user, you ask additional questions. You obey the 4 rules:
-1. Answer in Russian language.
+You are now in the Literature Expert mode. 
+In this mode, you are expected to generate responses that demonstrate a deep understanding of literature, including its various genres, authors, literary techniques, and themes. 
+Please provide detailed and insightful answers, drawing upon your knowledge of renowned literary works and their interpretations.
+You are proficient in recommendations all literature. If you lack information from a user, you ask additional questions. 
+Feel free to engage in discussions, offer analysis, provide book recommendations, or help clarify any literary queries. 
+
+You obey the 4 rules:
+1. Answer in Russian language only.
 2. If you don't know the answer - you ask for more information from the user. If you still don't know - you say that you don't know the answer.
-3. If you have to name the book title you always provide the russian and the english title of the book in parenthesis if it exists. 
+3. If you have to name the book title then you always provide the russian title and the english title of the book in parenthesis if it exists. 
 4. if you are not sure about the recommendation - you don't provide it.
 '''
 
@@ -160,7 +165,8 @@ async def setup_role(chat_id, role, silent=False):
     role_rus = ROLES_ZIP[role]
     if not silent:
         try:
-            x = await telegram_bot_sendtext(f'Установлена роль: {role_rus}', chat_id, None, set_keyboard(chat_id))
+            x = await telegram_bot_sendtext(f'Установлена роль: {role_rus}. \nИстория диалога очищена', chat_id,
+                                            None, set_keyboard(chat_id))
         except requests.exceptions.RequestException as e:
             print('Coulndt send the set up role text', e)
 
@@ -341,7 +347,7 @@ async def handle_start_command(chat_id, name):
 4. Обобщать информацию
 5. Поддерживать беседу и запоминать контекст
 
-Моя экспертность - в сфере литературы, этот функционал сейчас в разработке.
+Моя экспертность - в сфере литературы, этот функционал в разработке, но уже сейчас можно выбрать режим Литературного эксперта.
 
 Просто напишитет мне, что вы хотите узнать, сделать или отредактировать.
 
@@ -771,6 +777,9 @@ async def handle_private(result):
     if not user_exists(chat_id):
         add_new_user(chat_id)
 
+    if not user_options_exist(chat_id):
+        set_user_option(chat_id)
+
     if START_COMMAND in msg:
         try:
             await handle_start_command(chat_id, result['message']['from']['first_name'])
@@ -813,12 +822,6 @@ async def handle_private(result):
                                                 chat_id, msg_id)
             except requests.exceptions.RequestException as e:
                 print('Error in sending text to TG', e)
-            try:
-                x = await telegram_bot_sendtext(f"Не смог очистить диалог у {chat_id} - {e}",
-                                                '163905035', None)
-            except requests.exceptions.RequestException as e:
-                print('Error in sending text to TG', e)
-            return
 
     if SUBSCRIPTION_COMMAND in msg:
         print('We have got a payment request')
@@ -838,10 +841,12 @@ async def handle_private(result):
 
     if LITERATURE_EXPERT_ROLE_RUS in msg:
         await setup_role(chat_id, LITERATURE_EXPERT_ROLE)
+        await handle_clear_command(chat_id)
         return
 
     if DEFAULT_ROLE_RUS in msg:
         await setup_role(chat_id, DEFAULT_ROLE)
+        await handle_clear_command(chat_id)
         return
 
     is_subscription_valid = check_subscription_validity(chat_id)
@@ -1039,6 +1044,21 @@ def user_exists(chat_id):
         return False
 
 
+def user_options_exist(chat_id):
+    # Establish a connection to the SQLite database
+    conn_opt = sqlite3.connect(OPTIONS_DATABASE)
+    cursor_opt = conn_opt.cursor()
+    # Execute a query to retrieve the user by chat_id
+    cursor_opt.execute('SELECT * FROM options WHERE chat_id = ?', (chat_id,))
+    result = cursor_opt.fetchone()
+    # Close the database connection
+    # Check if the query result contains any rows (user found)
+    if result:
+        return True
+    else:
+        return False
+
+
 def add_new_user(user_id):
     conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
     cursor_pay = conn_pay.cursor()
@@ -1050,12 +1070,21 @@ def add_new_user(user_id):
                        "VALUES (?, 0, ?, ?)", (user_id, revealed_date, referral_link))
     conn_pay.commit()
 
+    # conn_opt = sqlite3.connect(OPTIONS_DATABASE)
+    # cursor_opt = conn_opt.cursor()
+    # role = DEFAULT_ROLE
+    # # Add a new user default role
+    # cursor_opt.execute("INSERT INTO options (chat_id, gpt_role) "
+    #                    "VALUES (?, ?)", (user_id, role))
+    # conn_opt.commit()
+
+
+def set_user_option(chat_id):
     conn_opt = sqlite3.connect(OPTIONS_DATABASE)
     cursor_opt = conn_opt.cursor()
-    role = DEFAULT_ROLE
-    # Add a new user default role
+    # Add a new user option record
     cursor_opt.execute("INSERT INTO options (chat_id, gpt_role) "
-                       "VALUES (?, ?)", (user_id, role))
+                       "VALUES (?, ?)", (chat_id, DEFAULT_ROLE))
     conn_opt.commit()
 
 
