@@ -1,3 +1,5 @@
+# version 0.0.1, working on news
+
 import requests
 import json
 import os
