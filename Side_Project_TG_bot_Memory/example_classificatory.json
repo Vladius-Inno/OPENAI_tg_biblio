@@ -1,0 +1,105 @@
+ "classificatory": {
+        "genre_group": [
+            {
+                "genre": [
+                    {
+                        "genre": [
+                            {
+                                "genre_id": 4,
+                                "label": "Космоопера",
+                                "percent": 0.8,
+                                "votes": 377
+                            },
+                            {
+                                "genre_id": 2,
+                                "label": "«Твёрдая» научная фантастика",
+                                "percent": 0.5,
+                                "votes": 245
+                            }
+                        ],
+                        "genre_id": 1,
+                        "label": "Фантастика",
+                        "percent": 1.0,
+                        "votes": 451
+                    }
+                ],
+                "genre_group_id": 1,
+                "label": "Жанры/поджанры"
+            },
+            {
+                "genre": [
+                    {
+                        "genre_id": 47,
+                        "label": "Философское",
+                        "percent": 0.9,
+                        "votes": 386
+                    }
+                ],
+                "genre_group_id": 2,
+                "label": "Общие характеристики"
+            },
+            {
+                "genre": [
+                    {
+                        "genre": [
+                            {
+                                "genre_id": 127,
+                                "label": "Планеты  другой звёздной системы",
+                                "percent": 0.9,
+                                "votes": 399
+                            },
+                            {
+                                "genre_id": 90,
+                                "label": "Открытый космос",
+                                "percent": 0.7,
+                                "votes": 328
+                            }
+                        ],
+                        "genre_id": 89,
+                        "label": "Вне Земли",
+                        "percent": 0.9,
+                        "votes": 426
+                    }
+                ],
+                "genre_group_id": 3,
+                "label": "Место действия"
+            },
+            {
+                "genre": [
+                    {
+                        "genre_id": 103,
+                        "label": "Далёкое будущее",
+                        "percent": 1.0,
+                        "votes": 436
+                    }
+                ],
+                "genre_group_id": 4,
+                "label": "Время действия"
+            },
+            {
+                "genre": [
+                    {
+                        "genre_id": 137,
+                        "label": "Искусственный интеллект",
+                        "percent": 0.9,
+                        "votes": 392
+                    }
+                ],
+                "genre_group_id": 6,
+                "label": "Сюжетные ходы"
+            },
+            {
+                "genre": [
+                    {
+                        "genre_id": 106,
+                        "label": "Любой",
+                        "percent": 0.5,
+                        "votes": 211
+                    }
+                ],
+                "genre_group_id": 5,
+                "label": "Возраст читателя"
+            }
+        ],
+        "total_count": 453
+    },
