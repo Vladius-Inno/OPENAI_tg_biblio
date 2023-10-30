@@ -103,15 +103,13 @@ You obey the 4 rules:
 # cursor_opt = conn_opt.cursor()
 
 # new connectors
-db = database_work.DatabaseConnector(test=TEST)
-cursor_options = db.get_cursor(OPTIONS_DATABASE)
-cursor_subscriptions = db.get_cursor(SUBSCRIPTION_DATABASE)
-cursor_messages = db.get_cursor(MESSAGES_DATABASE)
+mess_db = database_work.DatabaseConnector('messages', test=TEST)
+mess_cursor = mess_db.get_cursor()
 
 # extractors for the database tables
-mess_ext = database_work.MessagesInteractor(cursor_options, db.connection, test=TEST)
-opt_ext = database_work.OptionsInteractor(cursor_options, db.connection, test=TEST)
-subs_ext = database_work.SubscriptionsInteractor(cursor_options, db.connection, test=TEST)
+mess_ext = database_work.MessagesInteractor(mess_cursor, mess_db.connection, test=TEST)
+opt_ext = database_work.OptionsInteractor(mess_cursor, mess_db.connection, test=TEST)
+subs_ext = database_work.SubscriptionsInteractor(mess_cursor, mess_db.connection, test=TEST)
 
 telegram = telegram_int.TelegramInt(BOT_TOKEN)
 handler = handlers.Handler(mess_ext, opt_ext, subs_ext, telegram)
@@ -640,6 +638,7 @@ async def handle_supergroup(result):
     # Leave write_history BLANK
     write_history = ''
     chat_id = str(result['message']['chat']['id'])
+    prompt = ""
     if chat_id in ALLOWED_GROUP_ID:
         msg_id = str(int(result['message']['message_id']))
         # print('In allowed group ID')
@@ -666,7 +665,6 @@ async def handle_supergroup(result):
                 await telegram.send_text(f'Новый пользователь - {name}', '163905035')
         except Exception as e:
             print("Error in greeting", e)
-            prompt = ""
 
         # try:
         #     if '/img' in result['message']['text']:
@@ -761,8 +759,6 @@ async def handle_supergroup(result):
                 #     print('Error in sending text to TG', e)
                 await telegram.send_text(f"OpenAI не ответил вовремя на /ask - {e}",
                                          '163905035', None)
-
-            except Exception as e:
                 print("Couldn't handle the /ask command", e)
 
 

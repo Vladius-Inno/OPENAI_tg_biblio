@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import psycopg2
 import os
 
@@ -27,13 +29,13 @@ def handle_database_errors(func):
 
 
 class DatabaseConnector:
-    def __init__(self, test=False):
+    def __init__(self, database, test=False):
         self.test = test
         self.tables = []
         self._setup()
-        print('Connection initiated, list of tables:', self.tables)
         self.connection = None
-        self.database = 'messages_test' if test else 'messages'
+        self.database = database+"_test" if test else database
+        print(f'Connection to {self.database} initiated')
 
     def _setup(self):
         self.tables = [SUBSCRIPTION_DATABASE, MESSAGES_DATABASE, OPTIONS_DATABASE]
@@ -52,12 +54,12 @@ class DatabaseConnector:
             print(error)
             conn = None
         self.connection = conn
-        print('Connection set up')
+        print(f'Connection to {self.database} set up')
 
-    def get_cursor(self, table):
-        table = table.strip('.db')
-        if self.test:
-            table += '_test'
+    def get_cursor(self):
+        # table = table.strip('.db')
+        # if self.test:
+        #     table += '_test'
         if not self.connection:
             self.open_connection()
         conn = self.connection
@@ -68,12 +70,12 @@ class DatabaseConnector:
     def close_connection(self):
         if self.connection is not None:
             self.connection.close()
-            print('Database connection closed.')
+            print(f'Connection to {self.database} closed.')
 
 
 class DatabaseInteractor:
-    def __init__(self, cursor, conn, table, test=False):
-        self.table = table.strip('.db') + '_test' if test else table.strip('.db')
+    def __init__(self, cursor, conn, table=None, test=False):
+        self.table = table.strip('.db') + '_test' if test else table.strip('.db') if table else None
         self.test = test
         self.cursor = cursor
         self.conn = conn
@@ -223,11 +225,70 @@ class SubscriptionsInteractor(DatabaseInteractor):
         self.conn.commit()
 
 
+class GenreInteractor(DatabaseInteractor):
+    tables_default = ["characteristics", "age", "genres", "linearity", "place", "plot",
+                      "time"]  # Replace with your table names
+
+    def __init__(self, cursor, conn):
+        super().__init__(cursor, conn)
+
+
+    @staticmethod
+    def multiple_search(cursor, input_string, tables=None):
+        # Split the input string into individual characteristics
+        characteristics = [char.strip() for char in input_string.split(',')]
+        # Define a list of table names to search
+        table_names = tables or GenreInteractor.tables_default
+        # Dictionary to store results
+        result_dict = {}
+        # Iterate through each characteristic and search in each table
+        for characteristic in characteristics:
+            for table_name in table_names:
+                # print(f'Searching "{characteristic}" in "{table_name}"')
+                # Replace "column_name" with the column you want to search in
+                query = f"SELECT wg_id, parent_id FROM {table_name} WHERE name ILIKE %s"
+                cursor.execute(query, [f"%{characteristic}%"])
+                records = cursor.fetchall()
+                if records:
+                    # print('Got the match:')
+                    if characteristic in result_dict:
+                        result_dict[characteristic].append((table_name, records[0]))
+                        # print(records[0])
+                    else:
+                        result_dict[characteristic] = [(table_name, records[0])]
+        return result_dict.items()
+
+
 if __name__ == '__main__':
-    db = DatabaseConnector(test=True)
-    cursor_options = db.get_cursor(OPTIONS_DATABASE)
-    opt_ext = OptionsInteractor(cursor_options, db.connection, test=True)
+    # mess_db = DatabaseConnector('messages', test=True)
+    # cursor = mess_db.get_cursor()
+    # opt_ext = OptionsInteractor(cursor, mess_db.connection, test=True)
 
-    print(opt_ext.check_role(374458904))
+    fant_db = DatabaseConnector('fantlab')
+    fant_cursor = fant_db.get_cursor()
+    fant_ext = GenreInteractor(fant_cursor, fant_db.connection)
 
-    db.close_connection()
+    # print(opt_ext.check_role(374458904))
+
+    input_string = "фантастика, вампиры, европа"
+    result = GenreInteractor.multiple_search(fant_cursor, input_string)
+    ids = set()
+    # Print the results
+    for characteristic, records in result:
+        # print(f"Characteristic: {characteristic}")
+        for table_name, record in records:
+            record_id, parent_id = record
+            # print(f"Found in Table: {table_name}, ID: {record_id}, parent_id {parent_id}")
+            if record_id:
+                ids.add(record_id)
+            if parent_id:
+                ids.add(parent_id)
+    # print(ids)
+    items = '=on&'.join(list(ids))
+    string = f'https://fantlab.ru/bygenre?form=&{items}' + '=on&'
+    print(string)
+
+
+
+    # mess_db.close_connection()
+    fant_db.close_connection()
