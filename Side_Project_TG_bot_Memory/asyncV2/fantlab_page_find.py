@@ -7,27 +7,29 @@ from fantlab_nwe import FantlabApi, BookDatabase
 base_url = "https://fantlab.ru/bygenre?"
 
 
+def _fetch_html(url_string):
+    # Send an HTTP GET request to the URL
+    response = requests.get(url_string)
+    if response.status_code == 200:
+        # Get the HTML content
+        return response.text
+    else:
+        print("Failed to retrieve the page. Status code:", response.status_code)
+        return None
+
+
 class FantlabParser:
-    def __init__(self, url):
-        self.url = url
-        self.html_content = self._fetch_html()
+    def __init__(self):
+        pass
 
-    def _fetch_html(self):
-        # Send an HTTP GET request to the URL
-        response = requests.get(self.url)
-        if response.status_code == 200:
-            # Get the HTML content
-            return response.text
-        else:
-            print("Failed to retrieve the page. Status code:", response.status_code)
-            return None
-
-    def parse_books(self, num):
+    @staticmethod
+    def parse_books(url_string, num):
         # parses the num books from the fantlab url
-        if self.html_content is None:
+        html_content = _fetch_html(url_string)
+        if html_content is None:
             return None
         # Create a BeautifulSoup object
-        soup = BeautifulSoup(self.html_content, 'html.parser')
+        soup = BeautifulSoup(html_content, 'html.parser')
         # Find all book entries
         book_entries = soup.find_all('tr')  # [3:-1]  # Adjust this to match the actual table structure
         books = []
@@ -63,8 +65,8 @@ class FantlabParser:
 
 if __name__ == "__main__":
     url = base_url + "wg1=on&wg8=on&wg11=on&wg101=on&lang=rus&form"
-    fantasy_parser = FantlabParser(url)
-    books = fantasy_parser.parse_books(5)
+    # fantasy_parser = FantlabParser()
+    books = FantlabParser.parse_books(url, 5)
 
     if books:
         for i, book in enumerate(books, start=1):

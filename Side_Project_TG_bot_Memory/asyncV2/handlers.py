@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
 from datetime import datetime, timedelta
+import fantlab_nwe
+import random
 
 
 class Handler:
@@ -123,6 +125,14 @@ class Handler:
         # except requests.exceptions.RequestException as e:
         #     print('Coulndt send the info message', e)
         await self.telegram_ext.send_text(message, chat_id)
+
+    async def handle_recom_command(self, chat_id, markup):
+        # Initialize the Fantlab_api with the base URL
+        api_connect = fantlab_nwe.FantlabApi()
+        # Initialize Service A with the ServiceBClient
+        service = fantlab_nwe.BookDatabase(api_connect)
+        message = f"Для точного подбора нужно знать о ваших предпочтениях"
+        await self.telegram_ext.send_text(message, chat_id, None, markup)
 
     async def help_command(self, chat_id):
         message = f'''

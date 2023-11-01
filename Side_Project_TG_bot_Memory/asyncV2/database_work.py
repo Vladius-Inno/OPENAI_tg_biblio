@@ -2,6 +2,10 @@
 
 import psycopg2
 import os
+import json
+
+# for checking
+import fantlab_nwe
 
 host_name = os.environ['host_name']
 user_name = os.environ['user_name']
@@ -12,6 +16,8 @@ MESSAGES_DATABASE = 'messages'
 OPTIONS_DATABASE = 'options'
 
 DEFAULT_ROLE = 'default_role'
+
+WORKS_DATABASE = 'works'
 
 
 def handle_database_errors(func):
@@ -164,7 +170,7 @@ class SubscriptionsInteractor(DatabaseInteractor):
         return self.cursor.fetchone()[0]
 
     @handle_database_errors
-    def get_refferal(self, chat_id):
+    def get_referral(self, chat_id):
         # Get a referral link from the database
         self.cursor.execute(f"SELECT referral_link FROM {self.table} WHERE chat_id = %s", (chat_id,))
         return self.cursor.fetchone()[0]
@@ -225,20 +231,21 @@ class SubscriptionsInteractor(DatabaseInteractor):
         self.conn.commit()
 
 
-class GenreInteractor(DatabaseInteractor):
+class FantInteractor(DatabaseInteractor):
     tables_default = ["characteristics", "age", "genres", "linearity", "place", "plot",
                       "time"]  # Replace with your table names
 
     def __init__(self, cursor, conn):
         super().__init__(cursor, conn)
-
+        self.table = WORKS_DATABASE
 
     @staticmethod
+    @handle_database_errors
     def multiple_search(cursor, input_string, tables=None):
         # Split the input string into individual characteristics
         characteristics = [char.strip() for char in input_string.split(',')]
         # Define a list of table names to search
-        table_names = tables or GenreInteractor.tables_default
+        table_names = tables or FantInteractor.tables_default
         # Dictionary to store results
         result_dict = {}
         # Iterate through each characteristic and search in each table
@@ -247,6 +254,8 @@ class GenreInteractor(DatabaseInteractor):
                 # print(f'Searching "{characteristic}" in "{table_name}"')
                 # Replace "column_name" with the column you want to search in
                 query = f"SELECT wg_id, parent_id FROM {table_name} WHERE name ILIKE %s"
+                # query = f"SELECT wg_id, parent_id FROM {table_name} WHERE to_tsvector('russian', name) @@
+                # to_tsquery('russian', %s)"
                 cursor.execute(query, [f"%{characteristic}%"])
                 records = cursor.fetchall()
                 if records:
@@ -258,37 +267,77 @@ class GenreInteractor(DatabaseInteractor):
                         result_dict[characteristic] = [(table_name, records[0])]
         return result_dict.items()
 
+    @handle_database_errors
+    def store_work(self, work):
+        data_json = json.dumps(work.data)
+        self.cursor.execute(f"INSERT INTO {self.table} (wg_id, work_json) VALUES (%s, %s)",
+                            (work.id, data_json))
+        self.conn.commit()
+        return "ok"
+
+    @handle_database_errors
+    def get_work_db(self, work_id):
+        self.cursor.execute(f"SELECT work_json FROM {self.table} WHERE wg_id = %s", (str(work_id), ))
+        result = self.cursor.fetchone()
+        if result:
+            data_json = result[0]
+            print(data_json)
+        else:
+            return None
+        return fantlab_nwe.Work(data_json)
+
 
 if __name__ == '__main__':
     # mess_db = DatabaseConnector('messages', test=True)
     # cursor = mess_db.get_cursor()
     # opt_ext = OptionsInteractor(cursor, mess_db.connection, test=True)
 
+    # Connector to the fantlab database
     fant_db = DatabaseConnector('fantlab')
+    # Cursor the fantlab database
     fant_cursor = fant_db.get_cursor()
-    fant_ext = GenreInteractor(fant_cursor, fant_db.connection)
+    # Interactor with the fantlab database, main class for requests
+    fant_ext = FantInteractor(fant_cursor, fant_db.connection)
 
-    # print(opt_ext.check_role(374458904))
+    # input_string = "фантастика, вампиры, европейский сеттинг"
+    # result = FantInteractor.multiple_search(fant_cursor, input_string)
+    # ids = set()
+    # # Print the results
+    # for characteristic, records in result:
+    #     # print(f"Characteristic: {characteristic}")
+    #     for table_name, record in records:
+    #         record_id, parent_id = record
+    #         # print(f"Found in Table: {table_name}, ID: {record_id}, parent_id {parent_id}")
+    #         if record_id:
+    #             ids.add(record_id)
+    #         if parent_id:
+    #             ids.add(parent_id)
+    # # print(ids)
+    # items = '=on&'.join(list(ids))
+    # string = f'https://fantlab.ru/bygenre?form=&{items}' + '=on&'
+    # print(string)
 
-    input_string = "фантастика, вампиры, европа"
-    result = GenreInteractor.multiple_search(fant_cursor, input_string)
-    ids = set()
-    # Print the results
-    for characteristic, records in result:
-        # print(f"Characteristic: {characteristic}")
-        for table_name, record in records:
-            record_id, parent_id = record
-            # print(f"Found in Table: {table_name}, ID: {record_id}, parent_id {parent_id}")
-            if record_id:
-                ids.add(record_id)
-            if parent_id:
-                ids.add(parent_id)
-    # print(ids)
-    items = '=on&'.join(list(ids))
-    string = f'https://fantlab.ru/bygenre?form=&{items}' + '=on&'
-    print(string)
+    work_id = 1
+    # Initialize the Fantlab_api with the base URL
+    api_connect = fantlab_nwe.FantlabApi()
+    # Initialize DatabaseConnector with the Fantlabapiclient
+    service = fantlab_nwe.BookDatabase(api_connect)
 
+    # get the work by it's id and print
+    # work = service.get_work(487156)
+    # work.show()
+    # store the work in the db
+    # fant_ext.store_work(work)
 
+    # books = service.search_main('Голдинг').book_list()
+    # [book.show() for book in books]
 
-    # mess_db.close_connection()
+    # make the func for that in main
+    work = fant_ext.get_work_db(work_id)
+    if not work:
+        work = service.get_work(work_id)
+        fant_ext.store_work(work)
+    work.show()
+
+    # Close the fantlab connection
     fant_db.close_connection()

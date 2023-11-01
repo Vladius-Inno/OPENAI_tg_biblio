@@ -114,8 +114,35 @@ subs_ext = database_work.SubscriptionsInteractor(mess_cursor, mess_db.connection
 telegram = telegram_int.TelegramInt(BOT_TOKEN)
 handler = handlers.Handler(mess_ext, opt_ext, subs_ext, telegram)
 
+RANDOM_BOOK_COMMAND = "*Случайная книга*"
+RECOMMEND_COMMAND = "*Рекомендации*"
+RECOMMENDATION_EXIT_COMMAND = "*Выйти*"
+PREFERENCES_COMMAND = "*Предпочтения*"
 
-def set_keyboard(chat_id):
+
+async def handle_random_book(chat_id):
+    pass
+
+
+async def handle_recomendation(chat_id):
+    pass
+
+
+async def handle_recom_exit(chat_id):
+    await telegram.send_text("Вышли из режима рекомендаций", chat_id, None, set_keyboard_roles(chat_id))
+
+
+async def handle_preferences(chat_id):
+    print(f'Handling preferences for {chat_id}')
+
+
+INLINE_COMMANDS = {RECOMMEND_COMMAND: handle_recomendation,
+                   RECOMMENDATION_EXIT_COMMAND: handle_recom_exit,
+                   PREFERENCES_COMMAND: handle_preferences,
+                   RANDOM_BOOK_COMMAND: handle_random_book}
+
+
+def set_keyboard_roles(chat_id):
     # get the gpt_role
     gpt_role = opt_ext.check_role(chat_id)
     role_position = ROLES.index(gpt_role)
@@ -144,6 +171,21 @@ keyboard_subscribe = {
     ]]
 }
 
+keyboard_recom_markup = {
+    'keyboard': [
+        [
+            {'text': RANDOM_BOOK_COMMAND},
+            {'text': RECOMMEND_COMMAND},
+        ],
+        [
+            {'text': RECOMMENDATION_EXIT_COMMAND},
+            {'text': PREFERENCES_COMMAND}
+        ]
+    ],
+    'resize_keyboard': True,  # Allow the keyboard to be resized
+    'one_time_keyboard': False  # Requests clients to hide the keyboard as soon as it's been used
+}
+
 
 async def setup_role(chat_id, role, silent=False):
     # Add a gpt_role into the database with options extractor
@@ -159,7 +201,7 @@ async def setup_role(chat_id, role, silent=False):
         # except requests.exceptions.RequestException as e:
         #     print('Coulndt send the set up role text', e)
         await telegram.send_text(f'Установлена роль: {role_rus}. \nИстория диалога очищена',
-                                 chat_id, None, set_keyboard(chat_id))
+                                 chat_id, None, set_keyboard_roles(chat_id))
 
 
 # Make the request to the OpenAI API
@@ -248,23 +290,6 @@ async def check_message_limit(chat_id, limit, subscription_status):
         else:
             return True, limit_messages_left, free_message_count
     return True, limit_messages_left, free_message_count  # Message within limit, return True
-
-
-@retry(attempts=10)
-async def handle_recom_command(chat_id):
-    # Initialize the Fantlab_api with the base URL
-    api_connect = fantlab_nwe.FantlabApi()
-    # Initialize Service A with the ServiceBClient
-    service = fantlab_nwe.BookDatabase(api_connect)
-    try:
-        # Call FantlabApi method to fetch and process data
-        idx = str(random.randint(1, 1000))
-        result = service.get_work(idx)
-        text = f'Рекомендуем книгу - {result["title"]}. \n\nВот описание: {result["desc"]} \n\nОбложка: {result["image"]}'
-        await telegram.send_text(text, chat_id, None)
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
-    pass
 
 
 @retry(attempts=3)
@@ -400,7 +425,7 @@ async def handle_pay_command(chat_id):
     })
     # print(prices)
     description = f'Расширяет лимит сообщений в день до {DAY_LIMIT_SUBSCRIPTION}'
-    amount = f"{MONTH_SUBSCRIPTION_PRICE*100}"
+    amount = f"{MONTH_SUBSCRIPTION_PRICE * 100}"
     payload = {
         "chat_id": chat_id,
         "title": "Месячная подписка",
@@ -435,24 +460,24 @@ async def handle_pay_command(chat_id):
 #     return response_text['data'][0]['url']
 
 
-async def handle_refer_command(chat_id):
-    # Get a referral link from the database
-    conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
-    cursor_pay = conn_pay.cursor()
-    cursor_pay.execute("SELECT referral_link FROM subscriptions WHERE chat_id = ?", (chat_id,))
-    result = cursor_pay.fetchone()[0]
-    print('The referral link is', result)
-
-    message = f'''
-⚡ Ссылка на присоединение к боту: {result}.
-
-🔄 Отправьте это сообщение другу.
-        '''
-    # try:
-    #     x = await telegram_bot_sendtext(message, chat_id, None)
-    # except requests.exceptions.RequestException as e:
-    #     print('Coulndt send the info message', e)
-    await telegram.send_text(message, chat_id)
+# async def handle_refer_command(chat_id):
+#     # Get a referral link from the database
+#     conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
+#     cursor_pay = conn_pay.cursor()
+#     cursor_pay.execute("SELECT referral_link FROM subscriptions WHERE chat_id = ?", (chat_id,))
+#     result = cursor_pay.fetchone()[0]
+#     print('The referral link is', result)
+#
+#     message = f'''
+# ⚡ Ссылка на присоединение к боту: {result}.
+#
+# 🔄 Отправьте это сообщение другу.
+#         '''
+#     # try:
+#     #     x = await telegram_bot_sendtext(message, chat_id, None)
+#     # except requests.exceptions.RequestException as e:
+#     #     print('Coulndt send the info message', e)
+#     await telegram.send_text(message, chat_id)
 
 
 # async def handle_help_command(chat_id):
@@ -801,19 +826,23 @@ async def handle_private(result):
 
     msg = result['message']['text']
 
+    # a new user
     if not subs_ext.user_exists(chat_id):
         add_new_user(chat_id)
 
+    # set options for a new user or in case of options failure
     if not opt_ext.options_exist(chat_id):
         opt_ext.set_user_option(chat_id)
 
+    # Command detection starts
     if START_COMMAND in msg:
         try:
             # await handle_start_command(chat_id, result['message']['from']['first_name'])
+            await setup_role(chat_id, DEFAULT_ROLE, silent=True)
+
             await handler.start_command(chat_id, result['message']['from']['first_name'], DAY_LIMIT_PRIVATE,
                                         DAY_LIMIT_SUBSCRIPTION, REFERRAL_BONUS, MONTH_SUBSCRIPTION_PRICE,
-                                        set_keyboard(chat_id))
-            await setup_role(chat_id, DEFAULT_ROLE, silent=True)
+                                        set_keyboard_roles(chat_id))
 
             # check if the new user came with referral link and get the number of referree
             if msg.startswith('/start '):
@@ -852,7 +881,7 @@ async def handle_private(result):
             # except requests.exceptions.RequestException as e:
             #     print('Error in sending text to TG', e)
             await telegram.send_text("Диалог сброшен",
-                                     chat_id, msg_id, set_keyboard(chat_id))
+                                     chat_id, msg_id, set_keyboard_roles(chat_id))
             return
         except Exception as e:
             print("Couldn't handle the /clear command", e)
@@ -882,7 +911,7 @@ async def handle_private(result):
         return
 
     if RECOM_COMMAND in msg:
-        await handle_recom_command(chat_id)
+        await handler.handle_recom_command(chat_id, keyboard_recom_markup)
         return
 
     if LITERATURE_EXPERT_ROLE_RUS in msg:
@@ -896,7 +925,9 @@ async def handle_private(result):
         # await handle_clear_command(chat_id)
         await handler.handle_clear_command(chat_id)
         return
+    # Command detection ends for most commands
 
+    # get the validity
     is_subscription_valid = check_subscription_validity(chat_id)
     if is_subscription_valid:
         limit = DAY_LIMIT_SUBSCRIPTION
@@ -941,8 +972,20 @@ async def handle_private(result):
     else:
         print(f'{chat_id} is NOT subscribed on channel {CHANNEL_NAME}')
 
+    # from now on handle the message without the commands
     if channel_subscribed or is_subscription_valid:
         if validity:
+            # handle inline commands
+            inline_command = None
+            # check if inline command in message
+            for command in INLINE_COMMANDS.keys():
+                if command == msg:
+                    inline_command = command
+            # run the correspomdent function handler
+            if inline_command:
+                await INLINE_COMMANDS[inline_command](chat_id)
+                return
+
             if messages_left <= 0:
                 print('Need to decrease the free messages')
                 subs_ext.decrease_free_messages(chat_id, 1)
@@ -1301,8 +1344,8 @@ async def main():
 
 
 if __name__ == '__main__':
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    # loop = asyncio.new_event_loop()
+    # asyncio.set_event_loop(loop)
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
