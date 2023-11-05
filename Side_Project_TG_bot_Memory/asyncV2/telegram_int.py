@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import json
 import requests
 from retrying_async import retry
@@ -44,8 +46,30 @@ class TelegramInt:
 
     @handle_telegram_errors
     @retry(attempts=3)
+    async def send_photo(self, photo, message, chat_id, reply_markup=None):
+
+        payload = {
+            'chat_id': chat_id,
+            'caption': message,
+            'photo': photo
+        }
+        # Convert the keyboard dictionary to JSON string and add to the payload
+        if reply_markup:
+            reply_markup = json.dumps(reply_markup)
+            payload['reply_markup'] = reply_markup
+        print("TG sending the text", payload)
+        response = requests.post(
+            self.base_url + self.bot_token + '/sendPhoto',
+            json=payload, timeout=10
+        )
+        response.raise_for_status()  # Raises an exception for non-2xx status codes
+        print("TG sent the photo", response)
+        return response.json()
+
+    @handle_telegram_errors
+    @retry(attempts=3)
     async def user_subscribed(self, user_id, channel_name):
-        # Ïîëó÷àåì èíôîðìàöèþ î ïîäïèñêå ïîëüçîâàòåëÿ íà êàíàë
+        # ÐŸÐ¾Ð»ÑƒÑ‡Ð°ÐµÐ¼ Ð¸Ð½Ñ„Ð¾Ñ€Ð¼Ð°Ñ†Ð¸ÑŽ Ð¾ Ð¿Ð¾Ð´Ð¿Ð¸ÑÐºÐµ Ð¿Ð¾Ð»ÑŒÐ·Ð¾Ð²Ð°Ñ‚ÐµÐ»Ñ Ð½Ð° ÐºÐ°Ð½Ð°Ð»
         api_url = self.base_url + self.bot_token + '/getChatMember'
         params = {'chat_id': '@' + channel_name, 'user_id': user_id}
         response = requests.get(api_url, params=params)
@@ -88,6 +112,21 @@ class TelegramInt:
 
     @handle_telegram_errors
     @retry(attempts=3, delay=3)
+    async def edit_bot_message_markup(self, chat_id, message_id, reply_markup):
+        url = self.base_url + self.bot_token + '/editMessageReplyMarkup'
+        payload = {
+            'chat_id': chat_id,
+            'message_id': message_id,
+            'reply_markup': reply_markup
+        }
+        # print('Editing', payload)
+        response = requests.post(url, json=payload, timeout=20)
+        response.raise_for_status()
+        print("Edited the markup in message in TG", response)
+        return response.json()
+
+    @handle_telegram_errors
+    @retry(attempts=3, delay=3)
     async def get_updates(self, last_update):
         # Check for new messages in Telegram group
         # let's test if it works with offset +1
@@ -123,4 +162,44 @@ class TelegramInt:
         response = requests.post(url, json=payload)
         response.raise_for_status()
         return response
+
+    @handle_telegram_errors
+    @retry(attempts=3)
+    async def send_work(self, work, chat_id, reply_markup=None):
+
+        work_name = work.work_name or work.work_name_orig
+        work_year = work.work_year or "Ð³Ð¾Ð´ Ð½/Ð´"
+        message = f'{work.work_type.capitalize()} "{work_name}", {work_year}\nÐÐ²Ñ‚Ð¾Ñ€ - {work.author}\n' \
+                  f'Ð ÐµÐ¹Ñ‚Ð¸Ð½Ð³ - {work.rating} ({work.voters})\n\n{work.desc}'
+        if len(message) > 999:
+            message = message[:995] + " ..."
+
+        # # add the work id to the callbacks
+        # for elem in reply_markup['inline_keyboard'][0]:
+        #     elem['callback_data'] += str(work.id)
+        #     # print(key, reply_markup[key])
+
+        photo_url = work.image
+        if photo_url:
+            await self.send_photo(photo_url, message, chat_id, reply_markup)
+            return
+
+        payload = {
+            'chat_id': chat_id,
+            'text': message,
+        }
+        # Convert the keyboard dictionary to JSON string and add to the payload
+        if reply_markup:
+            reply_markup = json.dumps(reply_markup)
+            payload['reply_markup'] = reply_markup
+        print("TG sending the text", payload)
+        response = requests.post(
+            self.base_url + self.bot_token + '/sendMessage',
+            json=payload, timeout=10
+        )
+        response.raise_for_status()  # Raises an exception for non-2xx status codes
+        print("TG sent the data", response)
+        return response.json()
+
+
 

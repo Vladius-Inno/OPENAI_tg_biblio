@@ -6,7 +6,7 @@ import fantlab_page_find
 
 
 def search_by_string(cursor, string):
-    result = database_work.GenreInteractor.multiple_search(cursor, string)
+    result = database_work.FantInteractor.multiple_search(cursor, string)
     ids = set()
     # Print the results
     for characteristic, records in result:
@@ -22,13 +22,11 @@ def search_by_string(cursor, string):
     return '=on&'.join(list(ids))
 
 
-
-
 if __name__ == "__main__":
 
     fant_db = database_work.DatabaseConnector('fantlab')
     fant_cursor = fant_db.get_cursor()
-    fant_ext = database_work.GenreInteractor(fant_cursor, fant_db.connection)
+    fant_ext = database_work.FantInteractor(fant_cursor, fant_db.connection)
 
     input_string = "фантастика, бластеры"
 

@@ -78,6 +78,13 @@ ROLES = [DEFAULT_ROLE, LITERATURE_EXPERT_ROLE]
 ROLES_RUS = [DEFAULT_ROLE_RUS, LITERATURE_EXPERT_ROLE_RUS]
 ROLES_ZIP = {ROLES[i]: ROLES_RUS[i] for i in range(len(ROLES))}
 
+# callbacks for Work actions
+LIKE = 'LIKE'
+DISLIKE = 'DISLIKE'
+RATE = 'RATE'
+
+CALLBACKS = [LIKE, DISLIKE, RATE]
+
 LIT_PROMPT = '''
 You are now in the Literature Expert mode. 
 In this mode, you are expected to generate responses that demonstrate a deep understanding of literature, including its various genres, authors, literary techniques, and themes. 
@@ -92,27 +99,25 @@ You obey the 4 rules:
 4. if you are not sure about the recommendation - you don't provide it.
 '''
 
-# old connectors
-# conn = sqlite3.connect(MESSAGES_DATABASE)
-# cursor = conn.cursor()
-#
-# conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
-# cursor_pay = conn_pay.cursor()
-#
-# conn_opt = sqlite3.connect(OPTIONS_DATABASE)
-# cursor_opt = conn_opt.cursor()
-
 # new connectors
-mess_db = database_work.DatabaseConnector('messages', test=TEST)
-mess_cursor = mess_db.get_cursor()
+connector = database_work.DatabaseConnector('fantlab')
+cursor = connector.get_cursor()
 
 # extractors for the database tables
-mess_ext = database_work.MessagesInteractor(mess_cursor, mess_db.connection, test=TEST)
-opt_ext = database_work.OptionsInteractor(mess_cursor, mess_db.connection, test=TEST)
-subs_ext = database_work.SubscriptionsInteractor(mess_cursor, mess_db.connection, test=TEST)
+mess_ext = database_work.MessagesInteractor(cursor, connector.connection, test=TEST)
+opt_ext = database_work.OptionsInteractor(cursor, connector.connection, test=TEST)
+subs_ext = database_work.SubscriptionsInteractor(cursor, connector.connection, test=TEST)
 
 telegram = telegram_int.TelegramInt(BOT_TOKEN)
 handler = handlers.Handler(mess_ext, opt_ext, subs_ext, telegram)
+
+# Interactor with the fantlab database, main class for requests
+fant_ext = database_work.FantInteractor(cursor, connector.connection)
+
+# Initialize the Fantlab_api with the base URL
+api_connect = fantlab_nwe.FantlabApi()
+# Initialize DatabaseConnector with the Fantlabapiclient
+service = fantlab_nwe.BookDatabase(api_connect)
 
 RANDOM_BOOK_COMMAND = "*Случайная книга*"
 RECOMMEND_COMMAND = "*Рекомендации*"
@@ -121,7 +126,10 @@ PREFERENCES_COMMAND = "*Предпочтения*"
 
 
 async def handle_random_book(chat_id):
-    pass
+    work = service.get_random_work(image_on=True)
+    await telegram.send_work(work, chat_id, set_keyboard_rate_work(work.id))
+    await fant_ext.store_work(work)
+    return work.id, chat_id
 
 
 async def handle_recomendation(chat_id):
@@ -133,7 +141,8 @@ async def handle_recom_exit(chat_id):
 
 
 async def handle_preferences(chat_id):
-    print(f'Handling preferences for {chat_id}')
+    # print(f'Handling preferences for {chat_id}')
+    pass
 
 
 INLINE_COMMANDS = {RECOMMEND_COMMAND: handle_recomendation,
@@ -142,13 +151,13 @@ INLINE_COMMANDS = {RECOMMEND_COMMAND: handle_recomendation,
                    RANDOM_BOOK_COMMAND: handle_random_book}
 
 
-def set_keyboard_roles(chat_id):
+async def set_keyboard_roles(chat_id):
     # get the gpt_role
-    gpt_role = opt_ext.check_role(chat_id)
+    gpt_role = await opt_ext.check_role(chat_id)
     role_position = ROLES.index(gpt_role)
-    print('role positions', role_position)
+    # print('role positions', role_position)
     role_array = [1 if x == role_position else 0 for x in range(len(ROLES))]
-    print('role array', role_array)
+    # print('role array', role_array)
     keyboard_markup = {
         'keyboard':
             [
@@ -164,6 +173,17 @@ def set_keyboard_roles(chat_id):
     return keyboard_markup
 
 
+def set_keyboard_rate_work(work_id):
+    keyboard = {
+        'inline_keyboard': [[
+            {'text': "Like", 'callback_data': f'LIKE {work_id}'},  # Button with link to the channel
+            {'text': "Dislike", 'callback_data': f'DISLIKE {work_id}'},
+            {'text': "Rate", 'callback_data': f'RATE {work_id}'}
+        ]]
+    }
+    return keyboard
+
+
 # the markup for the button for the subscribe to channel
 keyboard_subscribe = {
     'inline_keyboard': [[
@@ -175,11 +195,13 @@ keyboard_recom_markup = {
     'keyboard': [
         [
             {'text': RANDOM_BOOK_COMMAND},
-            {'text': RECOMMEND_COMMAND},
+            {'text': RECOMMENDATION_EXIT_COMMAND},
+
+            # {'text': RECOMMEND_COMMAND},
         ],
         [
-            {'text': RECOMMENDATION_EXIT_COMMAND},
-            {'text': PREFERENCES_COMMAND}
+            # {'text': RECOMMENDATION_EXIT_COMMAND},
+            # {'text': PREFERENCES_COMMAND}
         ]
     ],
     'resize_keyboard': True,  # Allow the keyboard to be resized
@@ -189,19 +211,14 @@ keyboard_recom_markup = {
 
 async def setup_role(chat_id, role, silent=False):
     # Add a gpt_role into the database with options extractor
-    opt_ext.setup_role(chat_id, role)
+    await opt_ext.setup_role(chat_id, role)
     # cursor_opt.execute("UPDATE options SET gpt_role = ? WHERE chat_id = ?", (role, chat_id))
     # conn_opt.commit()
-    print(f'role {role} for {chat_id} is set')
+    print(f'Role {role} for {chat_id} is set')
     role_rus = ROLES_ZIP[role]
     if not silent:
-        # try:
-        #     x = await telegram_bot_sendtext(f'Установлена роль: {role_rus}. \nИстория диалога очищена', chat_id,
-        #                                     None, set_keyboard(chat_id))
-        # except requests.exceptions.RequestException as e:
-        #     print('Coulndt send the set up role text', e)
         await telegram.send_text(f'Установлена роль: {role_rus}. \nИстория диалога очищена',
-                                 chat_id, None, set_keyboard_roles(chat_id))
+                                 chat_id, None, await set_keyboard_roles(chat_id))
 
 
 # Make the request to the OpenAI API
@@ -242,7 +259,7 @@ async def add_private_message_to_db(chat_id, text, role, subscription_status):
     # Here, we'll store the message in the database
     timestamp = int(time.time())
     subscription_status = 1 if subscription_status else 0
-    mess_ext.insert_message(chat_id, text, role, subscription_status, timestamp)
+    await mess_ext.insert_message(chat_id, text, role, subscription_status, timestamp)
 
 
 async def get_last_messages(chat_id, amount):
@@ -250,7 +267,7 @@ async def get_last_messages(chat_id, amount):
     # cursor.execute(f"SELECT chat_id, role, message FROM messages WHERE chat_id = ? AND CLEARED = 0 "
     #                f"ORDER BY timestamp DESC LIMIT {amount}", (chat_id,))
     # rows = cursor.fetchall()
-    rows = mess_ext.get_last_messages(chat_id, amount)
+    rows = await mess_ext.get_last_messages(chat_id, amount)
     reversed_rows = reversed(rows)  # Reverse the order of the rows
     messages = []
     for row in reversed_rows:
@@ -270,13 +287,13 @@ async def check_message_limit(chat_id, limit, subscription_status):
     #                'AND timestamp > ?',
     #                (chat_id, 'user', subscription_status, start_of_day_timestamp))
     # message_count = cursor.fetchone()[0]
-    message_count = mess_ext.check_message_limit(chat_id, subscription_status, start_of_day_timestamp)
+    message_count = await mess_ext.check_message_limit(chat_id, subscription_status, start_of_day_timestamp)
     if message_count > limit:
         message_count = limit
     # get the bonus free messages if exist
     # cursor_pay.execute("SELECT bonus_count FROM subscriptions WHERE chat_id = ?", (chat_id,))
     # free_message_count = cursor_pay.fetchone()[0]
-    free_message_count = subs_ext.get_free_messages(chat_id)
+    free_message_count = await subs_ext.get_free_messages(chat_id)
 
     # print(f"Today {chat_id} had {message_count} messages")
     # Check if the message limit has been reached
@@ -307,96 +324,6 @@ async def subcribe_channel(chat_id):
     # except requests.exceptions.RequestException as e:
     #     print('Couldnt send the message with button', e)
     await telegram.send_text(message, chat_id, None, keyboard_subscribe)
-
-
-# async def handle_info_command(chat_id, validity, messages_left, free_messages_left):
-#     subscription_status = 'Активна' if validity else 'Не активна'
-#     # Get the current date and time
-#     current_datetime = datetime.now()
-#     # Increment the current date by 1 day to get the next day
-#     next_day = current_datetime + timedelta(days=1)
-#     # Set the time to 00:00:00 for the next day
-#     next_day_start = next_day.replace(hour=0, minute=0, second=0, microsecond=0)
-#     # Calculate the time difference between the current datetime and the next day's start
-#     time_left = next_day_start - current_datetime
-#     # Extract the number of hours and minutes from the time difference
-#     hours_left = time_left.seconds // 3600
-#     minutes_left = (time_left.seconds % 3600) // 60
-#
-#     if messages_left < 0:
-#         messages_left = 0
-#
-#     if validity:
-#         conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
-#         cursor_pay = conn_pay.cursor()
-#         # Retrieve the expiration date for the user
-#         cursor_pay.execute("SELECT expiration_date FROM subscriptions WHERE chat_id = ?", (chat_id,))
-#         result = cursor_pay.fetchone()[0]
-#         expiration_date = datetime.strptime(result, '%Y-%m-%d').strftime('%d-%m-%Y')
-#         message = f'''
-# ⚡️Статус вашей подписки: {subscription_status} до {expiration_date}.
-#
-# 🔄 У вас осталось ежедневных сообщений: {messages_left}. Лимит обновится через : {hours_left} ч. {minutes_left} мин.
-#
-# Также у вас есть бонусные сообщения: {free_messages_left}.
-#     '''
-#     else:
-#         message = f'''
-# ⚡️Статус вашей подписки: {subscription_status}
-#
-# 🔄 У вас осталось ежедневных сообщений: {messages_left}. Лимит обновится через : {hours_left} ч. {minutes_left} мин.
-#
-# Также у вас есть бонусные сообщения: {free_messages_left}.
-#
-# 🚀 Нужно больше?
-#
-# Оформите подписку и откройте новые возможности чат-бота с увеличенными лимитами.
-#
-# Также вы можете отправить другу ссылку на бота, используйте команду /refer. Когда друг начнёт пользоваться ботом, вы получите {REFERRAL_BONUS} бонусных сообщений!
-#
-# '''
-#     try:
-#         x = await telegram_bot_sendtext(message, chat_id, None)
-#     except requests.exceptions.RequestException as e:
-#         print('Coulndt send the info message', e)
-
-
-# async def handle_start_command(chat_id, name):
-#     message = f'''{name}, приветствую!
-#
-# ⚡️Я бот, работающий на ChatGPT 3.5.turbo
-#
-# Я умею:
-#
-# 1. Писать и редактировать тексты
-# 2. Писать и редактировать код
-# 3. Переводить с и на разные языки
-# 4. Обобщать информацию
-# 5. Поддерживать беседу и запоминать контекст
-#
-# Моя экспертность - в сфере литературы, этот функционал в разработке, но уже сейчас можно выбрать режим Литературного эксперта.
-#
-# Просто напишитет мне, что вы хотите узнать, сделать или отредактировать.
-#
-# В бесплатном режиме вам доступно {DAY_LIMIT_PRIVATE} сообщений в сутки. С подпиской лимит увеличивается до {DAY_LIMIT_SUBSCRIPTION}.
-#
-# Если друг начнёт пользоваться ботом по реферальной ссылке, вы получите {REFERRAL_BONUS} бонусных сообщений.
-#
-# Стоимость подписки - {MONTH_SUBSCRIPTION_PRICE}р в месяц.
-#
-# 🔄 Вы можете сбросить беседу, чтобы я не подтягивал из памяти ненужную информацию, для этого есть команда
-# /clear.
-#
-# ❕ Если я вам не отвечаю, перезапустите меня командой /start
-#
-# Спасибо! '''
-#     await setup_role(chat_id, DEFAULT_ROLE, silent=True)
-#
-#     # try:
-#     #     x = await telegram_bot_sendtext(message, chat_id, None, set_keyboard(chat_id))
-#     # except requests.exceptions.RequestException as e:
-#     #     print('Coulndt send the welcome message', e)
-#     await telegram.send_text(message, chat_id, None, set_keyboard(chat_id))
 
 
 # @retry(attempts=3)
@@ -460,70 +387,6 @@ async def handle_pay_command(chat_id):
 #     return response_text['data'][0]['url']
 
 
-# async def handle_refer_command(chat_id):
-#     # Get a referral link from the database
-#     conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
-#     cursor_pay = conn_pay.cursor()
-#     cursor_pay.execute("SELECT referral_link FROM subscriptions WHERE chat_id = ?", (chat_id,))
-#     result = cursor_pay.fetchone()[0]
-#     print('The referral link is', result)
-#
-#     message = f'''
-# ⚡ Ссылка на присоединение к боту: {result}.
-#
-# 🔄 Отправьте это сообщение другу.
-#         '''
-#     # try:
-#     #     x = await telegram_bot_sendtext(message, chat_id, None)
-#     # except requests.exceptions.RequestException as e:
-#     #     print('Coulndt send the info message', e)
-#     await telegram.send_text(message, chat_id)
-
-
-# async def handle_help_command(chat_id):
-#     message = f'''
-# Напишите ваш запрос и получите ответ от ChatGPT. Бот генерирует текст в формате диалога, он запоминает и понимает контекст в рамках 5 предыдущих сообщений.
-#
-# Бот может быть экспертом, ассистентом - нужно только сообщить ему об этом.
-#
-# Очистить контекст можно при помощи команды /clear.
-#
-# По всем вопросам - @v_smetanin
-#         '''
-#     # try:
-#     #     x = await telegram_bot_sendtext(message, chat_id, None)
-#     # except requests.exceptions.RequestException as e:
-#     #     print('Coulndt send the help message', e)
-#     await telegram.send_text(message, chat_id)
-
-
-# @retry(attempts=3, delay=3)
-# async def edit_bot_message(text, chat_id, message_id):
-#     url = f'https://api.telegram.org/bot{BOT_TOKEN}/editMessageText'
-#     payload = {
-#         'chat_id': chat_id,
-#         'message_id': message_id,
-#         'text': text
-#      }
-#
-#     print('Editing', payload)
-#     response = requests.post(url, json=payload, timeout=20)
-#     response.raise_for_status()
-#     print("Edited the message in TG", response)
-#     return response.json()
-
-
-# @retry(attempts=3)
-# async def set_typing_status(chat_id):
-#     url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendChatAction'
-#     payload = {
-#         'chat_id': chat_id,
-#         'action': 'typing'
-#     }
-#     response = requests.post(url, json=payload)
-#     response.raise_for_status()
-
-
 async def handle_pre_checkout_query(update):
     pre_checkout_query_id = update['pre_checkout_query']['id']
     invoice_payload = update['pre_checkout_query']['invoice_payload']
@@ -564,7 +427,7 @@ async def handle_successful_payment(update):
     #                    (chat_id,))
     # result = cursor_pay.fetchone()
     # current_subscription_status, current_start_date, current_expiration_date = result
-    current_subscription_status, current_start_date, current_expiration_date = subs_ext.get_subscription(chat_id)
+    current_subscription_status, current_start_date, current_expiration_date = await subs_ext.get_subscription(chat_id)
 
     # if the user doesn't have any subscription
     if current_subscription_status == 0:
@@ -575,31 +438,14 @@ async def handle_successful_payment(update):
         subscription_start_date = datetime.strptime(current_start_date, '%Y-%m-%d')
         subscription_expiration_date = datetime.strptime(current_expiration_date, '%Y-%m-%d') + timedelta(days=31)
 
-    subs_ext.update_subscription_status(chat_id, 1, subscription_start_date.strftime('%Y-%m-%d'),
-                                        subscription_expiration_date.strftime('%Y-%m-%d'))
-
-
-# @retry(attempts=3, delay=3)
-# async def get_updates(last_update):
-#     # Check for new messages in Telegram group
-#     # let's test if it works with offset +1
-#     last_update = str(int(last_update) + 1)
-#     url = f'https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset={last_update}'
-#     response = requests.get(url, timeout=20)
-#     response.raise_for_status()
-#     data = json.loads(response.content)
-#     # provide all messages instead of one in update
-#     # result = data['result'][len(data['result'])-1]
-#     result = data['result']
-#     if data['result']:
-#         print(data['result'])
-#         print(len(data['result']), "messages")
-#     return result
+    await subs_ext.update_subscription_status(chat_id, 1, subscription_start_date.strftime('%Y-%m-%d'),
+                                              subscription_expiration_date.strftime('%Y-%m-%d'))
 
 
 async def parse_updates(result, last_update):
     if float(result['update_id']) > float(last_update):
         # handle the pre_check_out
+        # TODO Drag to the payment lib
         try:
             if result['pre_checkout_query']:
                 try:
@@ -609,11 +455,6 @@ async def parse_updates(result, last_update):
                 except requests.exceptions.RequestException as e:
                     print('Couldnt handle the pre checkout')
                     last_update = str(int(result['update_id']))
-                    # try:
-                    #     x = telegram_bot_sendtext('Не удалось провести оплату. Пожалуйста, попробуйте ещё раз!',
-                    #                               result['pre_checkout_query']['from']['id'])
-                    # except requests.exceptions.RequestException as e:
-                    #     print('Couldnt send the Try pre_checkout again message', e)
                     await telegram.send_text('Не удалось провести оплату. Пожалуйста, попробуйте ещё раз!',
                                              result['pre_checkout_query']['from']['id'])
                 return last_update
@@ -638,6 +479,15 @@ async def parse_updates(result, last_update):
         except Exception as e:
             pass
 
+        try:
+            if result['callback_query']:
+                # print("HERE IN UPDATES")
+                await handle_callback_query(result['callback_query'])
+                last_update = str(int(result['update_id']))
+                return last_update
+        except Exception as e:
+            print(e)
+
         # Checking for new messages that did not come from chatGPT
         if not result['message']['from']['is_bot']:
             # remember the last update number
@@ -651,6 +501,7 @@ async def parse_updates(result, last_update):
                 await handle_private(result)
             if chat_type == "channel":
                 pass
+
     return last_update
 
 
@@ -809,11 +660,18 @@ async def handle_private(result):
     except Exception as e:
         pass
 
+    # try:
+    #     if result['callback_query']:
+    #         print('Got a callback')
+    #         handle_callback_query(result['callback_query'])
+    # except Exception as e:
+    #     print(e)
+
     chat_id = str(result['message']['chat']['id'])
     msg_id = str(int(result['message']['message_id']))
 
     # check if we got the text, else skip
-    if not 'text' in result['message']:
+    if not 'text' in result.get('message'):
         print('Got the non-text message')
         # try:
         #     x = await telegram_bot_sendtext("Извините, пока что я умею обрабатывать только текст",
@@ -827,12 +685,12 @@ async def handle_private(result):
     msg = result['message']['text']
 
     # a new user
-    if not subs_ext.user_exists(chat_id):
-        add_new_user(chat_id)
+    if not await subs_ext.user_exists(chat_id):
+        await add_new_user(chat_id)
 
     # set options for a new user or in case of options failure
-    if not opt_ext.options_exist(chat_id):
-        opt_ext.set_user_option(chat_id)
+    if not await opt_ext.options_exist(chat_id):
+        await opt_ext.set_user_option(chat_id)
 
     # Command detection starts
     if START_COMMAND in msg:
@@ -842,7 +700,7 @@ async def handle_private(result):
 
             await handler.start_command(chat_id, result['message']['from']['first_name'], DAY_LIMIT_PRIVATE,
                                         DAY_LIMIT_SUBSCRIPTION, REFERRAL_BONUS, MONTH_SUBSCRIPTION_PRICE,
-                                        set_keyboard_roles(chat_id))
+                                        await set_keyboard_roles(chat_id))
 
             # check if the new user came with referral link and get the number of referree
             if msg.startswith('/start '):
@@ -850,23 +708,13 @@ async def handle_private(result):
                 print('We have got a referring user', referree)
                 bonus_from_refer = await add_reffered_by(chat_id, referree)
                 if bonus_from_refer:
-                    subs_ext.add_referral_bonus(referree, REFERRAL_BONUS)
+                    await subs_ext.add_referral_bonus(referree, REFERRAL_BONUS)
                 return
             return
         except Exception as e:
             print("Couldn't handle the /start command", e)
-            # try:
-            #     x = await telegram_bot_sendtext("Извините, не смог стартовать",
-            #                                     chat_id, msg_id)
-            # except requests.exceptions.RequestException as e:
-            #     print('Error in sending text to TG', e)
             await telegram.send_text("Извините, не смог стартовать",
                                      chat_id, msg_id)
-            # try:
-            #     x = await telegram_bot_sendtext(f"Не смог стартовать у {chat_id} - {e}",
-            #                                     '163905035', None)
-            # except requests.exceptions.RequestException as e:
-            #     print('Error in sending text to TG', e)
             await telegram.send_text(f"Не смог стартовать у {chat_id} - {e}",
                                      '163905035')
             return
@@ -881,15 +729,10 @@ async def handle_private(result):
             # except requests.exceptions.RequestException as e:
             #     print('Error in sending text to TG', e)
             await telegram.send_text("Диалог сброшен",
-                                     chat_id, msg_id, set_keyboard_roles(chat_id))
+                                     chat_id, msg_id, await set_keyboard_roles(chat_id))
             return
         except Exception as e:
             print("Couldn't handle the /clear command", e)
-            # try:
-            #     x = await telegram_bot_sendtext("Извините, не смог очистить диалог",
-            #                                     chat_id, msg_id)
-            # except requests.exceptions.RequestException as e:
-            #     print('Error in sending text to TG', e)
             await telegram.send_text("Извините, не смог очистить диалог",
                                      chat_id, msg_id)
 
@@ -928,7 +771,7 @@ async def handle_private(result):
     # Command detection ends for most commands
 
     # get the validity
-    is_subscription_valid = check_subscription_validity(chat_id)
+    is_subscription_valid = await check_subscription_validity(chat_id)
     if is_subscription_valid:
         limit = DAY_LIMIT_SUBSCRIPTION
     else:
@@ -945,18 +788,8 @@ async def handle_private(result):
             return
         except Exception as e:
             print("Couldn't handle the /info command", e)
-            # try:
-            #     x = await telegram_bot_sendtext("Извините, не смог выдать информацию",
-            #                                     chat_id, msg_id)
-            # except requests.exceptions.RequestException as e1:
-            #     print('Error in sending text to TG', e1)
             await telegram.send_text("Извините, не смог выдать информацию",
                                      chat_id, msg_id)
-            # try:
-            #     x = await telegram_bot_sendtext(f"Не смог проинформировать у {chat_id} - {e}",
-            #                                     '163905035', None)
-            # except requests.exceptions.RequestException as e:
-            #     print('Error in sending text to TG', e)
             await telegram.send_text(f"Не смог проинформировать у {chat_id} - {e}",
                                      '163905035')
             return
@@ -983,26 +816,21 @@ async def handle_private(result):
                     inline_command = command
             # run the correspomdent function handler
             if inline_command:
+                # call the corresponding func
                 await INLINE_COMMANDS[inline_command](chat_id)
                 return
 
             if messages_left <= 0:
                 print('Need to decrease the free messages')
-                subs_ext.decrease_free_messages(chat_id, 1)
+                await subs_ext.decrease_free_messages(chat_id, 1)
             # get the last n messages from the db to feed them to the gpt
             messages = await get_last_messages(chat_id, CONTEXT_DEPTH)
-            print(messages)
+            # print(messages)
             # add the last received message to the db
             await add_private_message_to_db(chat_id, msg, 'user', is_subscription_valid)
             # send the last message and the previous historical messages from the db to the GPT
             prompt = msg
             # send the quick message to the user, which shows that we start thinking
-            # try:
-            #     x = await telegram_bot_sendtext("⏳ Ожидайте ответа от бота...", chat_id, msg_id)
-            #     # Extract the message_id from the response
-            #     sent_msg_id = x['result']['message_id']
-            # except requests.exceptions.RequestException as e:
-            #     print('Error in sending "Wait for the answer" text to TG', e)
             x = await telegram.send_text("⏳ Ожидайте ответа от бота...", chat_id, msg_id)
             sent_msg_id = x['result']['message_id']
 
@@ -1011,18 +839,12 @@ async def handle_private(result):
                 await telegram.set_typing_status(chat_id)
             except requests.exceptions.RequestException as e:
                 print('Couldnt set the typing status', e)
-            gpt_role = opt_ext.check_role(chat_id)
+            gpt_role = await opt_ext.check_role(chat_id)
             try:
                 bot_response = await openAI(f"{prompt}", MAX_TOKENS, messages, gpt_role)
                 await add_private_message_to_db(chat_id, bot_response, 'assistant', is_subscription_valid)
             except requests.exceptions.RequestException as e:
                 print("Error while waiting for the answer from OpenAI", e)
-                # try:
-                #     x = await telegram_bot_sendtext("Кажется, что-то случилось... Пожалуйста, отправьте запрос повторно",
-                #                                chat_id, msg_id)
-                #     return
-                # except requests.exceptions.RequestException as e:
-                #     print('Couldnt send the message "smth happend, try later"')
                 bot_response = None
                 await telegram.send_text("Кажется, что-то случилось... Пожалуйста, отправьте запрос повторно",
                                          chat_id, msg_id)
@@ -1034,12 +856,6 @@ async def handle_private(result):
                 print('Error in editing message', e)
         else:
             print(f'For {chat_id} the day limit is reached')
-            # try:
-            #     x = await telegram_bot_sendtext("У вас закончился лимит сообщений на день.\n"
-            #                                     "Чтобы увеличить лимит, оплатите подписку или воспользуйтесь "
-            #                                     "реферальной ссылкой", chat_id, msg_id)
-            # except requests.exceptions.RequestException as e:
-            #     print('Error in sending "The limit is reached" text to TG', e)
             await telegram.send_text("У вас закончился лимит сообщений на день.\n"
                                      "Чтобы увеличить лимит, оплатите подписку или воспользуйтесь "
                                      "реферальной ссылкой", chat_id, msg_id)
@@ -1047,82 +863,41 @@ async def handle_private(result):
         await subcribe_channel(chat_id)
 
 
-# Sending a message to a specific telegram group
-# @retry(attempts=3, delay=3)
-# async def telegram_bot_sendtext(bot_message, chat_id, msg_id, reply_markup=None):
-#
-#     payload = {
-#         'chat_id': chat_id,
-#         'text': bot_message,
-#         'reply_to_message_id': msg_id
-#     }
-#
-#     # Convert the keyboard dictionary to JSON string and add to the payload
-#     if reply_markup:
-#         reply_markup = json.dumps(reply_markup)
-#         payload['reply_markup'] = reply_markup
-#
-#     print("TG sending the text", payload)
-#     response = None
-#     response = requests.post(
-#         'https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage',
-#         json=payload, timeout=10
-#     )
-#     response.raise_for_status()  # Raises an exception for non-2xx status codes
-#     print("TG sent the data", response)
-#     return response.json()
-
-
-# Function to handle the callback query
-def handle_callback_query(callback_query):
+# Function to handle the callback query from recomednations
+async def handle_callback_query(callback_query):
     callback_data = callback_query['data']
+    # print('Callback is ', callback_data)
     chat_id = callback_query['message']['chat']['id']
+    msg_id = callback_query['message']['message_id']
 
-    if callback_data == 'default_role':
-        print('got the default role')
-    if callback_query == 'literature_expert':
-        print('got the literature expert role')
-
-
-# @retry(attempts=3, delay=5)
-# async def telegram_send_text_with_button(message_text, chat_id, button_text, channel_username):
-#     api_url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
-#     # Create the inline keyboard button
-#     keyboard = {
-#         'inline_keyboard': [[
-#             {'text': button_text, 'url': f't.me/{channel_username}'}  # Button with link to the channel
-#         ]]
-#     }
-#     # Convert the keyboard dictionary to JSON string
-#     reply_markup = json.dumps(keyboard)
-#     # Set the parameters for the API request
-#     params = {
-#         'chat_id': chat_id,
-#         'text': message_text,
-#         'reply_markup': reply_markup
-#     }
-#     # Send the API request
-#     response = requests.post(api_url, params=params)
-#     response.raise_for_status()
+    if callback_data.split()[0] in CALLBACKS:
+        print('Here comes the callback', callback_data)
+        if callback_data.split()[0] == LIKE:
+            await like(chat_id, callback_data.split()[1], msg_id)
+        if callback_data.split()[0] == DISLIKE:
+            dislike(chat_id, callback_data.split()[1])
+        if callback_data.split()[0] == RATE:
+            rate(chat_id, callback_data.split()[1])
+        return True
 
 
-# async def setup_keyboard(txt, chat_id):
-#
-#     reply_markup = json.dumps({'keyboard': keyboard, 'resize_keyboard': True})
-#
-#     url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
-#     payload = {'chat_id': chat_id, 'text': txt, 'reply_markup': reply_markup}
-#     response = requests.post(url, json=payload)
-#     return response.json()
+async def like(chat_id, work_id, msg_id):
+    print(chat_id, 'Likes', work_id)
+    keyboard = {
+        'inline_keyboard': [[
+            {'text': "Unlike", 'callback_data': f'UNLIKE {work_id}'},
+            {'text': "smth else", 'callback_data': f'SMTH {work_id}'}
+        ]]
+    }
+    await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
 
-# Sending a image to a specific telegram group
-# async def telegram_bot_sendimage(image_url, group_id, msg_id):
-#     data = {'chat_id': group_id, 'photo': image_url, 'reply_to_message_id': msg_id}
-#     url = 'https://api.telegram.org/bot' + BOT_TOKEN + '/sendPhoto'
-#
-#     response = requests.post(url, data=data)
-#     return response.json()
+def dislike(chat_id, work_id):
+    pass
+
+
+def rate(chat_id, work_id):
+    pass
 
 
 # Checking for specific tone for message
@@ -1136,37 +911,7 @@ async def checkTone(user_message):
     return [user_message, bot_personality]
 
 
-# def user_exists(chat_id):
-#     # # Establish a connection to the SQLite database
-#     # conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
-#     # cursor_pay = conn_pay.cursor()
-#     # # Execute a query to retrieve the user by chat_id
-#     # cursor_pay.execute('SELECT * FROM subscriptions WHERE chat_id = ?', (chat_id,))
-#     # result = cursor_pay.fetchone()
-#     result = subs_ext.user_exists(chat_id)
-#     # Check if the query result contains any rows (user found)
-#     if result:
-#         return True
-#     else:
-#         return False
-
-
-# def user_options_exist(chat_id):
-#     # Establish a connection to the SQLite database
-#     conn_opt = sqlite3.connect(OPTIONS_DATABASE)
-#     cursor_opt = conn_opt.cursor()
-#     # Execute a query to retrieve the user by chat_id
-#     cursor_opt.execute('SELECT * FROM options WHERE chat_id = ?', (chat_id,))
-#     result = cursor_opt.fetchone()
-#     # Close the database connection
-#     # Check if the query result contains any rows (user found)
-#     if result:
-#         return True
-#     else:
-#         return False
-
-
-def add_new_user(user_id):
+async def add_new_user(user_id):
     # conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
     # cursor_pay = conn_pay.cursor()
     revealed_date = datetime.now().strftime('%Y-%m-%d')
@@ -1176,7 +921,7 @@ def add_new_user(user_id):
     # cursor_pay.execute("INSERT INTO subscriptions (chat_id, subscription_status, revealed_date, referral_link) "
     #                    "VALUES (?, 0, ?, ?)", (user_id, revealed_date, referral_link))
     # conn_pay.commit()
-    subs_ext.add_new_user(user_id, revealed_date, referral_link)
+    await subs_ext.add_new_user(user_id, revealed_date, referral_link)
 
     # conn_opt = sqlite3.connect(OPTIONS_DATABASE)
     # cursor_opt = conn_opt.cursor()
@@ -1187,29 +932,20 @@ def add_new_user(user_id):
     # conn_opt.commit()
 
 
-# def set_user_option(chat_id):
-#     conn_opt = sqlite3.connect(OPTIONS_DATABASE)
-#     cursor_opt = conn_opt.cursor()
-#     # Add a new user option record
-#     cursor_opt.execute("INSERT INTO options (chat_id, gpt_role) "
-#                        "VALUES (?, ?)", (chat_id, DEFAULT_ROLE))
-#     conn_opt.commit()
-
-
 async def add_reffered_by(chat_id, referree):
     # conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
     # cursor_pay = conn_pay.cursor()
     #
     # cursor_pay.execute("SELECT referred_by FROM subscriptions WHERE chat_id = ?", (chat_id,))
     # result = cursor_pay.fetchone()[0]
-    result = subs_ext.referred_by(chat_id)
+    result = await subs_ext.referred_by(chat_id)
     refer_exist = True if result else False
     print('The previous referral link is', result)
     if not refer_exist:
         # Add to a newly added user the referree id
         # cursor_pay.execute("UPDATE subscriptions SET referred_by = ? WHERE chat_id = ?", (referree, chat_id))
         # conn_pay.commit()
-        subs_ext.add_referree(referree, chat_id)
+        await subs_ext.add_referree(referree, chat_id)
         # try:
         #     x = await telegram_bot_sendtext(f'Поздравляем! Пользователь {chat_id} присоединился к боту {BOT_NAME} по '
         #                               f'вашей реферальной ссылке', referree, None)
@@ -1223,63 +959,14 @@ async def add_reffered_by(chat_id, referree):
         return False
 
 
-# def add_referral_bonus(referree, referral_bonus):
-#     conn_pay = sqlite3.connect('subscriptions.db')
-#     cursor_pay = conn_pay.cursor()
-#     # Execute the SQL query to increment the bonus count by 1
-#     cursor_pay.execute(f"UPDATE subscriptions SET bonus_count = bonus_count + {referral_bonus} WHERE chat_id = ?", (referree,))
-#     conn_pay.commit()
-
-# Decrement the free messages count for the specified chat_id
-
-
-# def decrease_free_messages(chat_id):
-#     conn_pay = sqlite3.connect('subscriptions.db')
-#     cursor_pay = conn_pay.cursor()
-#     # Execute the SQL query to decrement the free messages count by 1
-#     cursor_pay.execute("UPDATE subscriptions SET bonus_count = bonus_count - 1 WHERE chat_id = ?",
-#                        (chat_id,))
-#     # Commit the changes to the database
-#     conn_pay.commit()
-
-
-# @retry(attempts=3)
-# async def user_subscribed(user_id, channel_name):
-#     # Получаем информацию о подписке пользователя на канал
-#     api_url = f'https://api.telegram.org/bot{BOT_TOKEN}/getChatMember'
-#     params = {'chat_id': '@'+channel_name, 'user_id': user_id}
-#     response = requests.get(api_url, params=params)
-#     response.raise_for_status()
-#     data = response.json()
-#     print(data)
-#     if response.status_code == 200 and data['ok']:
-#         # Check if the user is a member of the channel
-#         return data['result']['status'] == 'member' or data['result']['status'] == 'creator'
-#     else:
-#         # Failed to fetch the chat member information
-#         return False
-
-
-# def update_subscription_status(chat_id, subscription_status, start_date, expiration_date):
-#     conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
-#     cursor_pay = conn_pay.cursor()
-#     # Update the subscription status for the user
-#     cursor_pay.execute("UPDATE subscriptions SET subscription_status = ? WHERE chat_id = ?",
-#                        (subscription_status, chat_id))
-#     # Set the start and expiration dates for the user's subscription
-#     cursor_pay.execute("UPDATE subscriptions SET start_date = ?, expiration_date = ? WHERE chat_id = ?",
-#                        (start_date, expiration_date, chat_id))
-#     conn_pay.commit()
-
-
-def check_subscription_validity(chat_id):
+async def check_subscription_validity(chat_id):
     # conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
     # cursor_pay = conn_pay.cursor()
     # # Get the subscription status, start date, and expiration date for the user
     # cursor_pay.execute("SELECT subscription_status, start_date, expiration_date FROM subscriptions WHERE chat_id = ?",
     #                    (chat_id,))
     # result = cursor_pay.fetchone()
-    result = subs_ext.get_subscription(chat_id)
+    result = await subs_ext.get_subscription(chat_id)
     if result is not None:
         subscription_status, start_date_text, expiration_date_text = result
         if subscription_status == 1:
@@ -1291,7 +978,7 @@ def check_subscription_validity(chat_id):
                 return True
             # the date is expired, fill in the old dates but change the status
             else:
-                subs_ext.update_subscription_status(chat_id, 0, start_date_text, expiration_date_text)
+                await subs_ext.update_subscription_status(chat_id, 0, start_date_text, expiration_date_text)
                 return False
     return False
 
@@ -1300,31 +987,20 @@ async def ChatGPTbot():
     with open(FILENAME) as f:
         last_update = f.read()
     f.close()
-
     # get updates for the bot
     try:
         result = await telegram.get_updates(last_update)
     except requests.exceptions.RequestException as e:
         print("Didn't get the update from TG", e)
         result = []
-        # try:
-        #     x = await telegram_bot_sendtext(f"Не смог получить апдейт от телеграма - {e}", '163905035', None)
-        # except requests.exceptions.RequestException as e:
-        #     print('Error in sending text to TG', e)
         await telegram.send_text(f"Не смог получить апдейт от телеграма - {e}", '163905035')
-
     try:
         # Checking for new message and processing them
         for res in result:
             last_update = await parse_updates(res, last_update)
     except Exception as e:
         print("General error in ChatGPTbot", e)
-        # try:
-        #     x = await telegram_bot_sendtext(f"Случилась общая ошибка в коде - {e}", '163905035', None)
-        # except requests.exceptions.RequestException as e:
-        #     print('Error in sending text to TG', e)
         await telegram.send_text(f"Случилась общая ошибка в коде - {e}", '163905035')
-
     # Updating file with last update ID
     with open(FILENAME, 'w') as f:
         f.write(last_update)
@@ -1353,6 +1029,7 @@ if __name__ == '__main__':
         # conn.close()
         # cursor_pay.close()
         # conn_pay.close()
+        connector.close_connection()
         print('Finished')
 
 # loop = asyncio.get_event_loop()

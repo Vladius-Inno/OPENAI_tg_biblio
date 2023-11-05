@@ -2,6 +2,7 @@
 
 import requests
 import pprint
+import random
 
 FANTLAB_API_ADDRESS = 'https://api.fantlab.ru/'
 FANTLAB_ADDRESS = 'https://fantlab.ru/'
@@ -37,16 +38,27 @@ class Work:
     Is used with the direct request for the Work from the api only.
     Can't be used with the results from the global search.
     """
+
+    dummy = {
+        "work_type": "Empty",
+        "work_name": "Empty",
+    }
+
     def __init__(self, data):
-        self.data = data
-        self.title = data.get('title')
-        self.author = data.get("authors")[0].get("name") if data.get("authors") else None
-        self.id = data.get("work_id")
-        self.image = FANTLAB_ADDRESS + data.get("image") if data.get("image") else None
-        self.desc = data.get('work_description')
-        self.work_type = data.get("work_type")
-        self.work_name = data.get("work_name")
-        self.rating = data.get("rating").get("rating") if isinstance(data.get("rating"), dict) else data.get('rating')[0]
+        self.data = data or Work.dummy
+        self.title = self.data.get('title')
+        self.author = self.data.get("authors")[0].get("name") if self.data.get("authors") else None
+        self.id = self.data.get("work_id")
+        self.image = FANTLAB_ADDRESS + self.data.get("image") if self.data.get("image") else None
+        self.desc = self.data.get('work_description')
+        self.work_type = self.data.get("work_type")
+        self.work_name = self.data.get("work_name")
+        self.work_name_orig = self.data.get("work_name_orig")
+        self.rating = self.data.get("rating").get("rating") if isinstance(self.data.get("rating"), dict) \
+            else self.data.get('rating')[0] if self.data.get('rating') else None
+        self.voters = self.data.get("rating").get("voters") if isinstance(self.data.get("rating"), dict) \
+            else self.data.get('rating')[1] if self.data.get('rating') else None
+        self.work_year = self.data.get('work_year')
 
     def show(self):
         """
@@ -96,6 +108,16 @@ class FantlabApi:
             raise Exception(f"Failed to get work from Fantlab. Status code: {response.status_code}")
 
     @handle_errors
+    def get_extended_work(self, work_id):
+        if not work_id:
+            return None
+        response = requests.get(f"{self.address}/work/{work_id}/extended")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get extended work from Fantlab. Status code: {response.status_code}")
+
+    @handle_errors
     def search_main(self, query):
         if not query:
             return None
@@ -104,6 +126,18 @@ class FantlabApi:
             return response.json()
         else:
             raise Exception(f"Failed to get work from Fantlab. Status code: {response.status_code}")
+
+    @handle_errors
+    def get_random_work(self, image_on=False):
+        while True:
+            idx = random.randint(1, 1800000)
+            work = Work(self.get_work(idx))
+            if image_on and not work.image:
+                continue
+            if work.desc and work.rating and work.title and \
+                    (work.work_type.lower() in ['роман', 'повесть', 'рассказ', 'новелла']):
+                return work
+            continue
 
 
 class BookDatabase:
@@ -116,11 +150,24 @@ class BookDatabase:
 
     def get_work(self, work_id):
         data = self.database_client.get_work(work_id)
+        if data:
+            return Work(data)
+        return Work(data)
+
+    def get_extended_work(self, work_id):
+        data = self.database_client.get_extended_work(work_id)
+        # print(data)
+        if data:
+            return Work(data)
         return Work(data)
 
     def search_main(self, query):
         self.data = self.database_client.search_main(query)
         return Search(query, self.data)
+
+    def get_random_work(self, image_on=False):
+        work = self.database_client.get_random_work(image_on)
+        return work
 
 
 class Search:
