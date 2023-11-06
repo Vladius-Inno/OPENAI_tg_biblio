@@ -3,6 +3,8 @@
 import json
 import requests
 from retrying_async import retry
+from constants import MONTH_SUBSCRIPTION_PRICE, DAY_LIMIT_SUBSCRIPTION, PAY_TOKEN_TEST
+from datetime import datetime, timedelta
 
 
 def handle_telegram_errors(func):
@@ -201,5 +203,88 @@ class TelegramInt:
         print("TG sent the data", response)
         return response.json()
 
+    @handle_telegram_errors
+    async def handle_pre_checkout_query(self, update):
+        pre_checkout_query_id = update['pre_checkout_query']['id']
+        invoice_payload = update['pre_checkout_query']['invoice_payload']
+        currency = update['pre_checkout_query']['currency']
+        total_amount = int(update['pre_checkout_query']['total_amount']) / 100
+        user_id = update['pre_checkout_query']['from']['id']
+        # Confirm the payment
+        await self.answer_pre_checkout(pre_checkout_query_id)
+        print(f'The id {user_id} is going to pay {total_amount} in {currency} for {invoice_payload}')
 
+    @handle_telegram_errors
+    async def handle_pay_command(self, chat_id):
+        # Set up the payment request
+        # данные тестовой карты: 1111 1111 1111 1026, 12/22, CVC 000.
+        # url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendInvoice"
+        # prices = json.dumps([{"label": "Month subscription", "amount": MONTH_SUBSCRIPTION_PRICE * 100}])
+        provider_data = json.dumps({
+            "receipt": {
+                "items": [
+                    {
+                        "description": "Месячная подписка на Biblionarium GPT Bot",
+                        "quantity": "1",
+                        "amount": {
+                            "value": f"{MONTH_SUBSCRIPTION_PRICE}.00",
+                            "currency": "RUB"
+                        },
+                        "vat_code": "1",
+                    }
+                ]
+                # "customer": {
+                #     "email": 'mitinvlad@mail.ru'
+                # }
+            }
+        })
+        # print(prices)
+        description = f'Расширяет лимит сообщений в день до {DAY_LIMIT_SUBSCRIPTION}'
+        amount = f"{MONTH_SUBSCRIPTION_PRICE * 100}"
+        payload = {
+            "chat_id": chat_id,
+            "title": "Месячная подписка",
+            "description": description,
+            "payload": "Month_subscription",
+            "need_email": True,
+            "send_email_to_provider": True,
+            "provider_token": PAY_TOKEN_TEST,  # CHANGE FOR PRIMARY
+            "provider_data": provider_data,
+            "start_parameter": "The-Payment",
+            "currency": "RUB",
+            "prices": [{"label": "Месячная подписка", "amount": amount}]
+        }
+        # # Send the payment request
+        # # print(payload)
+        # response = requests.post(url, json=payload)
+        # # print(response)
+        # response.raise_for_status()
+        await self.handle_payment(payload)
 
+    @handle_telegram_errors
+    @retry(attempts=3)
+    async def handle_successful_payment(self, update, subs_ext):
+        amount = str(int(update['successful_payment']['total_amount']) / 100)
+        receipt_message = f"Спасибо за оплату!\n" \
+                          f"Товар: {update['successful_payment']['invoice_payload']}\n" \
+                          f"Сумма: {amount}\n" \
+                          f"Валюта: {update['successful_payment']['currency']}\n"
+
+        chat_id = update['chat']['id']
+        await self.send_text(receipt_message, chat_id)
+
+        # # get the current status of the user
+        current_subscription_status, current_start_date, current_expiration_date = await subs_ext.get_subscription(
+            chat_id)
+
+        # if the user doesn't have any subscription
+        if current_subscription_status == 0:
+            subscription_start_date = datetime.now()
+            subscription_expiration_date = subscription_start_date + timedelta(days=31)
+        else:
+            # if the user already has a subscription we copy the start date
+            subscription_start_date = datetime.strptime(current_start_date, '%Y-%m-%d')
+            subscription_expiration_date = datetime.strptime(current_expiration_date, '%Y-%m-%d') + timedelta(days=31)
+
+        await subs_ext.update_subscription_status(chat_id, 1, subscription_start_date.strftime('%Y-%m-%d'),
+                                                  subscription_expiration_date.strftime('%Y-%m-%d'))

@@ -14,7 +14,7 @@ class Handler:
 
     async def handle_clear_command(self, chat_id):
         # Update the messages associated with the specified chat_id, so they are "cleared"
-        self.mess_ext.clear_messages(chat_id)
+        await self.mess_ext.clear_messages(chat_id)
 
     async def handle_info_command(self, chat_id, validity, messages_left, free_messages_left, referral_bonus):
         subscription_status = 'Активна' if validity else 'Не активна'
@@ -39,7 +39,7 @@ class Handler:
             # # Retrieve the expiration date for the user
             # cursor_pay.execute("SELECT expiration_date FROM subscriptions WHERE chat_id = ?", (chat_id,))
             # result = cursor_pay.fetchone()[0]
-            result = self.subs_ext.get_expiration_date(chat_id)
+            result = await self.subs_ext.get_expiration_date(chat_id)
 
             expiration_date = datetime.strptime(result, '%Y-%m-%d').strftime('%d-%m-%Y')
             message = f'''
@@ -112,7 +112,7 @@ class Handler:
         # cursor_pay = conn_pay.cursor()
         # cursor_pay.execute("SELECT referral_link FROM subscriptions WHERE chat_id = ?", (chat_id,))
         # result = cursor_pay.fetchone()[0]
-        result = self.subs_ext.get_referral(chat_id)
+        result = await self.subs_ext.get_referral(chat_id)
         print('The referral link is', result)
 
         message = f'''

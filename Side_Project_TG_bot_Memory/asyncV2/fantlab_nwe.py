@@ -18,6 +18,7 @@ def handle_errors(func):
             # You can log the error, retry the connection, or perform other actions as needed
             # You might want to raise an exception or return a specific value here
             return None  # For demonstration purposes, return None in case of an error
+            # return Exception("Error occured with Fantlab")
     return wrapper
 
 
@@ -97,12 +98,11 @@ class FantlabApi:
         self.address = address or FANTLAB_API_ADDRESS
 
     @handle_errors
-    def get_work(self, work_id):
+    async def get_work(self, work_id):
         if not work_id:
             return None
         response = requests.get(f"{self.address}/work/{work_id}")
         if response.status_code == 200:
-
             return response.json()
         else:
             raise Exception(f"Failed to get work from Fantlab. Status code: {response.status_code}")
@@ -128,15 +128,19 @@ class FantlabApi:
             raise Exception(f"Failed to get work from Fantlab. Status code: {response.status_code}")
 
     @handle_errors
-    def get_random_work(self, image_on=False):
+    async def get_random_work(self, image_on=False):
         while True:
             idx = random.randint(1, 1800000)
-            work = Work(self.get_work(idx))
-            if image_on and not work.image:
-                continue
-            if work.desc and work.rating and work.title and \
-                    (work.work_type.lower() in ['роман', 'повесть', 'рассказ', 'новелла']):
-                return work
+            try:
+                data = await self.get_work(idx)
+                work = Work(data)
+                if image_on and not work.image:
+                    continue
+                if work.desc and work.rating and work.title and \
+                        (work.work_type.lower() in ['роман', 'повесть', 'рассказ', 'новелла']):
+                    return work
+            except Exception as e:
+                print('404 in getting a work from Fantlab')
             continue
 
 
@@ -148,8 +152,8 @@ class BookDatabase:
         self.database_client = database_client
         self.data = None
 
-    def get_work(self, work_id):
-        data = self.database_client.get_work(work_id)
+    async def get_work(self, work_id):
+        data = await self.database_client.get_work(work_id)
         if data:
             return Work(data)
         return Work(data)
@@ -165,8 +169,8 @@ class BookDatabase:
         self.data = self.database_client.search_main(query)
         return Search(query, self.data)
 
-    def get_random_work(self, image_on=False):
-        work = self.database_client.get_random_work(image_on)
+    async def get_random_work(self, image_on=False):
+        work = await self.database_client.get_random_work(image_on)
         return work
 
 

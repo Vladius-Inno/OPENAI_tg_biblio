@@ -1,13 +1,20 @@
 # version 0.0.1, working on news
 
-import requests, json, os, re, random, sys
+import requests, re, sys
 import memory
 import asyncio
-import sqlite3
 import time
 from retrying_async import retry
-from datetime import datetime, timedelta
+from datetime import datetime
 import fantlab_nwe, database_work, handlers, research, telegram_int
+from OpenAI import openAI
+
+from constants import BOT_TOKEN, ALLOWED_GROUP_ID, CHATBOT_HANDLE, BOT_NAME, FILENAME, \
+    ASK_COMMAND, CLEAR_COMMAND, START_COMMAND, INFO_COMMAND, REFERRAL_COMMAND, HELP_COMMAND, RECOM_COMMAND, \
+    SUBSCRIPTION_COMMAND, CHANNEL_NAME, CHANNEL_NAME_RUS, TEST, DAY_LIMIT_PRIVATE, DAY_LIMIT_SUBSCRIPTION, \
+    CONTEXT_DEPTH, MAX_TOKENS, REFERRAL_BONUS, MONTH_SUBSCRIPTION_PRICE, file, CHECK_MARK, LITERATURE_EXPERT_ROLE, \
+    LITERATURE_EXPERT_ROLE_RUS, DEFAULT_ROLE, DEFAULT_ROLE_RUS, ROLES, ROLES_ZIP, LIKE, DISLIKE, RATE, CALLBACKS, \
+    RANDOM_BOOK_COMMAND, RECOMMEND_COMMAND, RECOMMENDATION_EXIT_COMMAND, PREFERENCES_COMMAND
 
 if sys.stdout.encoding != 'utf-8':
     sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
@@ -16,117 +23,29 @@ if sys.stdout.encoding != 'utf-8':
 if sys.stderr.encoding != 'utf-8':
     sys.stderr = open(sys.stderr.fileno(), mode='w', encoding='utf-8', buffering=1)
 
-# OpenAI secret Key
-API_KEY = os.environ['API_KEY']
-# Models: text-davinci-003,text-curie-001,text-babbage-001,text-ada-001
-# MODEL = 'text-davinci-003'
-# the news api key
-API_NEWS_KEY = 'b4f73a45121643eb87fe1e1a2f39c3dd'
-MODEL = 'gpt-3.5-turbo'
-# Telegram secret access bot token
-BOT_TOKEN = os.environ['BOT_TOKEN']
-# Specify all group ID the bot can respond too
-ALLOWED_GROUP_ID = os.environ['ALLOWED_GROUP_ID']
-# Specify your Chat Bot handle
-CHATBOT_HANDLE = os.environ['CHATBOT_HANDLE']
-# The token for the payment provider
-PAY_TOKEN = os.environ['PAY_TOKEN']
-BOT_NAME = os.environ['BOT_NAME']
-PAY_TOKEN_TEST = os.environ['PAY_TOKEN_TEST']
-
-# Retrieve last ID message : Create an empty text file named chatgpt.txt, write 1 on the first line of
-# the text file and save it, write the full path of your file below
-FILENAME = 'chatgpt.txt'  # the update number is stored
-
-ASK_COMMAND = '/ask'
-CLEAR_COMMAND = '/clear'
-START_COMMAND = '/start'
-INFO_COMMAND = '/info'
-REFERRAL_COMMAND = '/refer'
-HELP_COMMAND = '/help'
-RECOM_COMMAND = '/recom'
-SUBSCRIPTION_COMMAND = '/pay'
-
-SUBSCRIPTION_DATABASE = 'subscriptions.db'
-MESSAGES_DATABASE = 'messages.db'
-OPTIONS_DATABASE = 'options.db'
-
-# SBER_TOKEN_TEST = "401643678:TEST:266f8c81-0fc1-46ac-b57f-64a5fcc97616"
-# Номер карты	2200 0000 0000 0053
-# Дата истечения срока действия	2024/12
-# Проверочный код на обратной стороне	123
-
-CHANNEL_NAME = 'Biblionarium'
-CHANNEL_NAME_RUS = "Библионариум"
-
-TEST = True
-
-DAY_LIMIT_PRIVATE = 15  # base is 10
-DAY_LIMIT_SUBSCRIPTION = 60
-CONTEXT_DEPTH = 5 * 2  # twice the context, because we get the users and the bots messages, base would be 10 * 2
-MAX_TOKENS = 800
-REFERRAL_BONUS = 30  # free messages that are used after the limit is over, base is 30
-MONTH_SUBSCRIPTION_PRICE = 170
-file = 'ClockworkOrange.txt'  # the current book loaded file
-
-CHECK_MARK = '✅ '
-LITERATURE_EXPERT_ROLE = 'literature_expert'
-LITERATURE_EXPERT_ROLE_RUS = 'Лит.эксперт 📖'
-DEFAULT_ROLE = 'default_role'
-DEFAULT_ROLE_RUS = 'Без роли ☝️'
-ROLES = [DEFAULT_ROLE, LITERATURE_EXPERT_ROLE]
-ROLES_RUS = [DEFAULT_ROLE_RUS, LITERATURE_EXPERT_ROLE_RUS]
-ROLES_ZIP = {ROLES[i]: ROLES_RUS[i] for i in range(len(ROLES))}
-
-# callbacks for Work actions
-LIKE = 'LIKE'
-DISLIKE = 'DISLIKE'
-RATE = 'RATE'
-
-CALLBACKS = [LIKE, DISLIKE, RATE]
-
-LIT_PROMPT = '''
-You are now in the Literature Expert mode. 
-In this mode, you are expected to generate responses that demonstrate a deep understanding of literature, including its various genres, authors, literary techniques, and themes. 
-Please provide detailed and insightful answers, drawing upon your knowledge of renowned literary works and their interpretations.
-You are proficient in recommendations all literature. If you lack information from a user, you ask additional questions. 
-Feel free to engage in discussions, offer analysis, provide book recommendations, or help clarify any literary queries. 
-
-You obey the 4 rules:
-1. Answer in Russian language only.
-2. If you don't know the answer - you ask for more information from the user. If you still don't know - you say that you don't know the answer.
-3. If you have to name the book title then you always provide the russian title and the english title of the book in parenthesis if it exists. 
-4. if you are not sure about the recommendation - you don't provide it.
-'''
-
 # new connectors
 connector = database_work.DatabaseConnector('fantlab')
-cursor = connector.get_cursor()
+# cursor = connector.get_cursor()
 
 # extractors for the database tables
-mess_ext = database_work.MessagesInteractor(cursor, connector.connection, test=TEST)
-opt_ext = database_work.OptionsInteractor(cursor, connector.connection, test=TEST)
-subs_ext = database_work.SubscriptionsInteractor(cursor, connector.connection, test=TEST)
+mess_ext = database_work.MessagesInteractor(connector, test=TEST)
+opt_ext = database_work.OptionsInteractor(connector, test=TEST)
+subs_ext = database_work.SubscriptionsInteractor(connector, test=TEST)
 
 telegram = telegram_int.TelegramInt(BOT_TOKEN)
 handler = handlers.Handler(mess_ext, opt_ext, subs_ext, telegram)
 
 # Interactor with the fantlab database, main class for requests
-fant_ext = database_work.FantInteractor(cursor, connector.connection)
+fant_ext = database_work.FantInteractor(connector)
 
 # Initialize the Fantlab_api with the base URL
 api_connect = fantlab_nwe.FantlabApi()
 # Initialize DatabaseConnector with the Fantlabapiclient
 service = fantlab_nwe.BookDatabase(api_connect)
 
-RANDOM_BOOK_COMMAND = "*Случайная книга*"
-RECOMMEND_COMMAND = "*Рекомендации*"
-RECOMMENDATION_EXIT_COMMAND = "*Выйти*"
-PREFERENCES_COMMAND = "*Предпочтения*"
-
 
 async def handle_random_book(chat_id):
-    work = service.get_random_work(image_on=True)
+    work = await service.get_random_work(image_on=True)
     await telegram.send_work(work, chat_id, set_keyboard_rate_work(work.id))
     await fant_ext.store_work(work)
     return work.id, chat_id
@@ -212,47 +131,11 @@ keyboard_recom_markup = {
 async def setup_role(chat_id, role, silent=False):
     # Add a gpt_role into the database with options extractor
     await opt_ext.setup_role(chat_id, role)
-    # cursor_opt.execute("UPDATE options SET gpt_role = ? WHERE chat_id = ?", (role, chat_id))
-    # conn_opt.commit()
     print(f'Role {role} for {chat_id} is set')
     role_rus = ROLES_ZIP[role]
     if not silent:
         await telegram.send_text(f'Установлена роль: {role_rus}. \nИстория диалога очищена',
                                  chat_id, None, await set_keyboard_roles(chat_id))
-
-
-# Make the request to the OpenAI API
-@retry(attempts=3, delay=3)
-async def openAI(prompt, max_tokens, messages, gpt_role):
-    # the example
-    # messages = [
-    #     {"role": "system", "content": "You are a helpful assistant."},
-    #     {"role": "user", "content": "Who won the world series in 2020?"},
-    #     {"role": "assistant", "content": "The Los Angeles Dodgers won the World Series in 2020."},
-    #     {"role": "user", "content": "Where was it played?"}
-    # ]
-    # if we don't get the history for the chat, then we create the list which append with the prompt
-    if messages is None:
-        messages = []
-
-    if gpt_role == LITERATURE_EXPERT_ROLE:
-        messages.append({"role": "system", "content": LIT_PROMPT})
-
-    messages.append({"role": "user", "content": prompt})
-    print("openAI sending request", prompt)
-    response = requests.post(
-        'https://api.openai.com/v1/chat/completions',
-        headers={'Authorization': f'Bearer {API_KEY}'},
-        json={'model': MODEL, 'messages': messages,
-              'temperature': 0.8, 'max_tokens': max_tokens},
-        timeout=30
-    )
-    response.raise_for_status()  # Raises an exception for non-2xx status codes
-    result = response.json()
-    final_result = ''
-    for i in range(0, len(result['choices'])):
-        final_result += result['choices'][i]['message']['content']
-    return final_result
 
 
 async def add_private_message_to_db(chat_id, text, role, subscription_status):
@@ -264,9 +147,7 @@ async def add_private_message_to_db(chat_id, text, role, subscription_status):
 
 async def get_last_messages(chat_id, amount):
     # Retrieve the last messages from the database
-    # cursor.execute(f"SELECT chat_id, role, message FROM messages WHERE chat_id = ? AND CLEARED = 0 "
-    #                f"ORDER BY timestamp DESC LIMIT {amount}", (chat_id,))
-    # rows = cursor.fetchall()
+
     rows = await mess_ext.get_last_messages(chat_id, amount)
     reversed_rows = reversed(rows)  # Reverse the order of the rows
     messages = []
@@ -283,16 +164,10 @@ async def check_message_limit(chat_id, limit, subscription_status):
     start_of_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     start_of_day_timestamp = start_of_day.timestamp()
     # Retrieve the message count for the current chat_id from the database
-    # cursor.execute('SELECT COUNT(*) FROM messages WHERE chat_id = ? AND role = ? AND subscription_status = ? '
-    #                'AND timestamp > ?',
-    #                (chat_id, 'user', subscription_status, start_of_day_timestamp))
-    # message_count = cursor.fetchone()[0]
     message_count = await mess_ext.check_message_limit(chat_id, subscription_status, start_of_day_timestamp)
     if message_count > limit:
         message_count = limit
     # get the bonus free messages if exist
-    # cursor_pay.execute("SELECT bonus_count FROM subscriptions WHERE chat_id = ?", (chat_id,))
-    # free_message_count = cursor_pay.fetchone()[0]
     free_message_count = await subs_ext.get_free_messages(chat_id)
 
     # print(f"Today {chat_id} had {message_count} messages")
@@ -319,127 +194,7 @@ async def subcribe_channel(chat_id):
 📲 Чтобы продолжить использование бота, просто подпишитесь на канал! 👌🏼
 '''
     # change to NOT after the test
-    # try:
-    #     x = await telegram_bot_sendtext(message, chat_id, None, keyboard_subscribe)
-    # except requests.exceptions.RequestException as e:
-    #     print('Couldnt send the message with button', e)
     await telegram.send_text(message, chat_id, None, keyboard_subscribe)
-
-
-# @retry(attempts=3)
-async def handle_pay_command(chat_id):
-    # Set up the payment request
-    # данные тестовой карты: 1111 1111 1111 1026, 12/22, CVC 000.
-    # url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendInvoice"
-    prices = json.dumps([{"label": "Month subscription", "amount": MONTH_SUBSCRIPTION_PRICE * 100}])
-    provider_data = json.dumps({
-        "receipt": {
-            "items": [
-                {
-                    "description": "Месячная подписка на Biblionarium GPT Bot",
-                    "quantity": "1",
-                    "amount": {
-                        "value": f"{MONTH_SUBSCRIPTION_PRICE}.00",
-                        "currency": "RUB"
-                    },
-                    "vat_code": "1",
-                }
-            ]
-            # "customer": {
-            #     "email": 'mitinvlad@mail.ru'
-            # }
-        }
-    })
-    # print(prices)
-    description = f'Расширяет лимит сообщений в день до {DAY_LIMIT_SUBSCRIPTION}'
-    amount = f"{MONTH_SUBSCRIPTION_PRICE * 100}"
-    payload = {
-        "chat_id": chat_id,
-        "title": "Месячная подписка",
-        "description": description,
-        "payload": "Month_subscription",
-        "need_email": True,
-        "send_email_to_provider": True,
-        "provider_token": PAY_TOKEN_TEST,  # CHANGE FOR PRIMARY
-        "provider_data": provider_data,
-        "start_parameter": "The-Payment",
-        "currency": "RUB",
-        "prices": [{"label": "Месячная подписка", "amount": amount}]
-    }
-    # # Send the payment request
-    # # print(payload)
-    # response = requests.post(url, json=payload)
-    # # print(response)
-    # response.raise_for_status()
-    await telegram.handle_payment(payload)
-
-
-# 2b. Function that gets an Image from OpenAI
-# async def openAImage(prompt):
-#     # Make the request to the OpenAI API
-#     resp = requests.post(
-#         'https://api.openai.com/v1/images/generations',
-#         headers={'Authorization': f'Bearer {API_KEY}'},
-#         json={'prompt': prompt, 'n': 1, 'size': '256x256'}
-#     )
-#     response_text = json.loads(resp.text)
-#     # print(response_text['data'][0]['url'])
-#     return response_text['data'][0]['url']
-
-
-async def handle_pre_checkout_query(update):
-    pre_checkout_query_id = update['pre_checkout_query']['id']
-    invoice_payload = update['pre_checkout_query']['invoice_payload']
-    currency = update['pre_checkout_query']['currency']
-    total_amount = int(update['pre_checkout_query']['total_amount']) / 100
-    user_id = update['pre_checkout_query']['from']['id']
-    # Confirm the payment
-    # url = f"https://api.telegram.org/bot{BOT_TOKEN}/answerPreCheckoutQuery"
-    # payload = {
-    #     "pre_checkout_query_id": pre_checkout_query_id,
-    #     "ok": True
-    # }
-    # response = requests.post(url, json=payload)
-    # response.raise_for_status()
-    await telegram.answer_pre_checkout(pre_checkout_query_id)
-    print(f'The id {user_id} is going to pay {total_amount} in {currency} for {invoice_payload}')
-
-
-@retry(attempts=3)
-async def handle_successful_payment(update):
-    amount = str(int(update['successful_payment']['total_amount']) / 100)
-    receipt_message = f"Спасибо за оплату!\n" \
-                      f"Товар: {update['successful_payment']['invoice_payload']}\n" \
-                      f"Сумма: {amount}\n" \
-                      f"Валюта: {update['successful_payment']['currency']}\n"
-
-    chat_id = update['chat']['id']
-    # try:
-    #     x = await telegram_bot_sendtext(receipt_message, chat_id, None)
-    # except requests.exceptions.RequestException as e:
-    #     print('Couldnt send the successfull payment message')
-    await telegram.send_text(receipt_message, chat_id)
-
-    # # get the current status of the user
-    # conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
-    # cursor_pay = conn_pay.cursor()
-    # cursor_pay.execute("SELECT subscription_status, start_date, expiration_date FROM subscriptions WHERE chat_id = ?",
-    #                    (chat_id,))
-    # result = cursor_pay.fetchone()
-    # current_subscription_status, current_start_date, current_expiration_date = result
-    current_subscription_status, current_start_date, current_expiration_date = await subs_ext.get_subscription(chat_id)
-
-    # if the user doesn't have any subscription
-    if current_subscription_status == 0:
-        subscription_start_date = datetime.now()
-        subscription_expiration_date = subscription_start_date + timedelta(days=31)
-    else:
-        # if the user already has a subscription we copy the start date
-        subscription_start_date = datetime.strptime(current_start_date, '%Y-%m-%d')
-        subscription_expiration_date = datetime.strptime(current_expiration_date, '%Y-%m-%d') + timedelta(days=31)
-
-    await subs_ext.update_subscription_status(chat_id, 1, subscription_start_date.strftime('%Y-%m-%d'),
-                                              subscription_expiration_date.strftime('%Y-%m-%d'))
 
 
 async def parse_updates(result, last_update):
@@ -449,7 +204,7 @@ async def parse_updates(result, last_update):
         try:
             if result['pre_checkout_query']:
                 try:
-                    await handle_pre_checkout_query(result)
+                    await telegram.handle_pre_checkout_query(result)
                     print('Successful checkout')
                     last_update = str(int(result['update_id']))
                 except requests.exceptions.RequestException as e:
@@ -481,7 +236,7 @@ async def parse_updates(result, last_update):
 
         try:
             if result['callback_query']:
-                # print("HERE IN UPDATES")
+                print("HERE IN UPDATES")
                 await handle_callback_query(result['callback_query'])
                 last_update = str(int(result['update_id']))
                 return last_update
@@ -527,17 +282,10 @@ async def handle_supergroup(result):
                 # random.choice(tone_list) + ' tone: ' + \
 
                 bot_response = await openAI(prompt, 200, None)
-                # Sending back response to telegram group
-                # try:
-                #     x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
-                # except requests.exceptions.RequestException as e:
-                #     print('Error in sending text to TG', e)
+
                 await telegram.send_text(bot_response, chat_id, msg_id)
                 name = result['message']['new_chat_participant']['first_name']
-                # try:
-                #     x = await telegram_bot_sendtext(f'Новый пользователь - {name}', '163905035', None)
-                # except requests.exceptions.RequestException as e:
-                #     print('Error in sending text to TG', e)
+
                 await telegram.send_text(f'Новый пользователь - {name}', '163905035')
         except Exception as e:
             print("Error in greeting", e)
@@ -585,27 +333,17 @@ async def handle_supergroup(result):
                 #
                 # if bot_response == '':
                 #     bot_response = await openAI(f"{bot_personality}{vague_prompt}", 400, None)
-                # try:
-                #     x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
-                # except requests.exceptions.RequestException as e:
-                #     print('Error in sending text to TG', e)
+
                 await telegram.send_text(bot_response, chat_id, msg_id)
 
                 # x = await telegram_bot_sendtext('I just sent some message', '163905035', None)
 
             except Exception as e:
                 print("Error while waiting for the answer from OpenAI", e)
-                # try:
-                #     x = await telegram_bot_sendtext("Ответ от центрального мозга потерялся в дороге",
-                #                                     chat_id, msg_id)
-                # except requests.exceptions.RequestException as e:
-                #     print('Error in sending text to TG', e)
+
                 await telegram.send_text("Ответ от центрального мозга потерялся в дороге",
                                          chat_id, msg_id)
-                # try:
-                #     x = await telegram_bot_sendtext(f"OpenAI не ответил вовремя - {e}", '163905035', None)
-                # except requests.exceptions.RequestException as e:
-                #     print('Error in sending text to TG', e)
+
                 await telegram.send_text(f"OpenAI не ответил вовремя - {e}", '163905035', None)
 
         if ASK_COMMAND in result['message']['text']:
@@ -614,25 +352,14 @@ async def handle_supergroup(result):
             print('Got the /ask command, master!')
             try:
                 answer = research.reply(file, prompt)
-                # try:
-                #     x = await telegram_bot_sendtext(answer, chat_id, msg_id)
-                # except requests.exceptions.RequestException as e:
-                #     print('Error in sending text to TG', e)
+
                 await telegram.send_text(answer, chat_id, msg_id)
             except Exception as e:
                 print("Error while waiting for the answer with from OpenAI for the /ask", e)
-                # try:
-                #     x = await telegram_bot_sendtext("Этот книжный вопрос поломал логику",
-                #                                     chat_id, msg_id)
-                # except requests.exceptions.RequestException as e:
-                #     print('Error in sending text to TG', e)
+
                 await telegram.send_text("Этот книжный вопрос поломал логику",
                                          chat_id, msg_id)
-                # try:
-                #     x = await telegram_bot_sendtext(f"OpenAI не ответил вовремя на /ask - {e}",
-                #                                     '163905035', None)
-                # except requests.exceptions.RequestException as e:
-                #     print('Error in sending text to TG', e)
+
                 await telegram.send_text(f"OpenAI не ответил вовремя на /ask - {e}",
                                          '163905035', None)
                 print("Couldn't handle the /ask command", e)
@@ -643,7 +370,7 @@ async def handle_private(result):
     try:
         if result['message']['successful_payment']:
             try:
-                await handle_successful_payment(result['message'])
+                await telegram.handle_successful_payment(result['message'], subs_ext)
                 print('Successful payment')
                 # last_update = str(int(result['update_id']))
             except requests.exceptions.RequestException as e:
@@ -667,7 +394,7 @@ async def handle_private(result):
     # except Exception as e:
     #     print(e)
 
-    chat_id = str(result['message']['chat']['id'])
+    chat_id = result['message']['chat']['id']
     msg_id = str(int(result['message']['message_id']))
 
     # check if we got the text, else skip
@@ -739,7 +466,7 @@ async def handle_private(result):
     if SUBSCRIPTION_COMMAND in msg:
         print('We have got a payment request')
         try:
-            await handle_pay_command(chat_id)
+            await telegram.handle_pay_command(chat_id)
         except Exception as e:
             print('Couldnt handle the pay command', e)
         return
@@ -849,8 +576,6 @@ async def handle_private(result):
                 await telegram.send_text("Кажется, что-то случилось... Пожалуйста, отправьте запрос повторно",
                                          chat_id, msg_id)
             try:
-                # x = await telegram_bot_sendtext(bot_response, chat_id, msg_id)
-                # edit the previously sent message "Wait for the answer"
                 x = await telegram.edit_bot_message(bot_response, chat_id, sent_msg_id)
             except requests.exceptions.RequestException as e:
                 print('Error in editing message', e)
@@ -912,17 +637,12 @@ async def checkTone(user_message):
 
 
 async def add_new_user(user_id):
-    # conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
-    # cursor_pay = conn_pay.cursor()
     revealed_date = datetime.now().strftime('%Y-%m-%d')
     referral_link = f'https://t.me/{BOT_NAME}?start={user_id}'
-
     # # Add a new user with default subscription status, start date, and expiration date
-    # cursor_pay.execute("INSERT INTO subscriptions (chat_id, subscription_status, revealed_date, referral_link) "
-    #                    "VALUES (?, 0, ?, ?)", (user_id, revealed_date, referral_link))
-    # conn_pay.commit()
     await subs_ext.add_new_user(user_id, revealed_date, referral_link)
 
+    # TODO check if new users are ok with roles
     # conn_opt = sqlite3.connect(OPTIONS_DATABASE)
     # cursor_opt = conn_opt.cursor()
     # role = DEFAULT_ROLE
@@ -933,24 +653,12 @@ async def add_new_user(user_id):
 
 
 async def add_reffered_by(chat_id, referree):
-    # conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
-    # cursor_pay = conn_pay.cursor()
-    #
-    # cursor_pay.execute("SELECT referred_by FROM subscriptions WHERE chat_id = ?", (chat_id,))
-    # result = cursor_pay.fetchone()[0]
     result = await subs_ext.referred_by(chat_id)
     refer_exist = True if result else False
     print('The previous referral link is', result)
     if not refer_exist:
         # Add to a newly added user the referree id
-        # cursor_pay.execute("UPDATE subscriptions SET referred_by = ? WHERE chat_id = ?", (referree, chat_id))
-        # conn_pay.commit()
         await subs_ext.add_referree(referree, chat_id)
-        # try:
-        #     x = await telegram_bot_sendtext(f'Поздравляем! Пользователь {chat_id} присоединился к боту {BOT_NAME} по '
-        #                               f'вашей реферальной ссылке', referree, None)
-        # except requests.exceptions.RequestException as e:
-        #     print('Couldnt send the message to referree', e)
         await telegram.send_text(f'Поздравляем! Пользователь {chat_id} присоединился к боту {BOT_NAME} по '
                                  f'вашей реферальной ссылке', referree)
         return True
@@ -960,12 +668,7 @@ async def add_reffered_by(chat_id, referree):
 
 
 async def check_subscription_validity(chat_id):
-    # conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
-    # cursor_pay = conn_pay.cursor()
     # # Get the subscription status, start date, and expiration date for the user
-    # cursor_pay.execute("SELECT subscription_status, start_date, expiration_date FROM subscriptions WHERE chat_id = ?",
-    #                    (chat_id,))
-    # result = cursor_pay.fetchone()
     result = await subs_ext.get_subscription(chat_id)
     if result is not None:
         subscription_status, start_date_text, expiration_date_text = result
@@ -994,29 +697,61 @@ async def ChatGPTbot():
         print("Didn't get the update from TG", e)
         result = []
         await telegram.send_text(f"Не смог получить апдейт от телеграма - {e}", '163905035')
-    try:
-        # Checking for new message and processing them
-        for res in result:
-            last_update = await parse_updates(res, last_update)
-    except Exception as e:
-        print("General error in ChatGPTbot", e)
-        await telegram.send_text(f"Случилась общая ошибка в коде - {e}", '163905035')
+
+    # # previous version of parsing updates
+    # try:
+    #     # Checking for new message and processing them
+    #     for res in result:
+    #         last_update = await parse_updates(res, last_update)
+    # except Exception as e:
+    #     print("General error in ChatGPTbot", e)
+    #     await telegram.send_text(f"Случилась общая ошибка в коде - {e}", '163905035')
+
+    # new version of parsing updates with async.gather
+    parsers = [parse_updates(res, last_update) for res in result]
+    parallel_result = await asyncio.gather(*parsers)
+    if parallel_result:
+        last_update = str(max([int(element) for element in parallel_result]))
+    print('UPDATES:', parallel_result, '\n', last_update)
+
     # Updating file with last update ID
     with open(FILENAME, 'w') as f:
         f.write(last_update)
     return "done"
 
 
+# async def main():
+#     connector.db_pool = await connector._create_db_pool()
+#     while True:
+#         try:
+#             await ChatGPTbot()
+#         except TypeError as e:
+#             print('Typeerror', e)
+#         try:
+#             await asyncio.sleep(5)
+#         except TypeError as e:
+#             print('The problem in sleep', e)
+
+
+async def client_interactions_with_delay(client_interactions, delay=1):
+    for interaction in client_interactions:
+        await interaction
+        await asyncio.sleep(delay)
+
+
 async def main():
+    connector.db_pool = await connector._create_db_pool()
     while True:
+        client_interactions = [ChatGPTbot() for _ in range(5)]
         try:
-            await ChatGPTbot()
+            await client_interactions_with_delay(client_interactions, delay=5)
+            # await asyncio.gather(*client_interactions_with_delay)
         except TypeError as e:
             print('Typeerror', e)
-        try:
-            await asyncio.sleep(5)
-        except TypeError as e:
-            print('The problem in sleep', e)
+        # try:
+        #     await asyncio.sleep(5)
+        # except TypeError as e:
+        #     print('The problem in sleep', e)
 
 
 if __name__ == '__main__':
@@ -1025,20 +760,12 @@ if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        # cursor.close()
-        # conn.close()
-        # cursor_pay.close()
-        # conn_pay.close()
-        connector.close_connection()
+        # connector.close_connection()
         print('Finished')
 
 # loop = asyncio.get_event_loop()
 # loop.run_until_complete(main())
 
-# cursor.close()
-# conn.close()
-# cursor_pay.close()
-# conn_pay.close()
 
 # TODO Make bot send postponed messages
 

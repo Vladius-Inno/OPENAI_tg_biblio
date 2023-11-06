@@ -2,6 +2,7 @@
 
 from bs4 import BeautifulSoup
 import requests
+import asyncio
 from fantlab_nwe import FantlabApi, BookDatabase
 
 base_url = "https://fantlab.ru/bygenre?"
@@ -23,7 +24,7 @@ class FantlabParser:
         pass
 
     @staticmethod
-    def parse_books(url_string, num):
+    async def parse_books(url_string, num):
         # parses the num books from the fantlab url
         html_content = _fetch_html(url_string)
         if html_content is None:
@@ -54,7 +55,8 @@ class FantlabParser:
                 if not rating_tag:
                     continue
             try:
-                books.append(service.get_work(work_index))
+                work = await service.get_work(work_index)
+                books.append(work)
                 counter += 1
             except Exception as e:
                 print(f"An error occurred: {str(e)}")
@@ -63,11 +65,9 @@ class FantlabParser:
         return books
 
 
-if __name__ == "__main__":
+async def checker():
     url = base_url + "wg1=on&wg8=on&wg11=on&wg101=on&lang=rus&form"
-    # fantasy_parser = FantlabParser()
-    books = FantlabParser.parse_books(url, 5)
-
+    books = await FantlabParser.parse_books(url, 5)
     if books:
         for i, book in enumerate(books, start=1):
             print(f"Book {i}:")
@@ -77,3 +77,10 @@ if __name__ == "__main__":
             print(f"Rating: {book.rating}\n")
     else:
         print("No books found.")
+
+
+if __name__ == "__main__":
+
+    asyncio.run(checker())
+
+
