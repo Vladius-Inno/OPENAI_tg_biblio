@@ -8,7 +8,7 @@ import os
 import json
 import asyncio
 # for checking
-import fantlab_nwe
+import fantlab
 
 host_name = os.environ['host_name']
 user_name = os.environ['user_name']
@@ -21,6 +21,7 @@ OPTIONS_DATABASE = 'options'
 DEFAULT_ROLE = 'default_role'
 
 WORKS_DATABASE = 'works'
+WORK_GENRES = "work_genres"
 
 
 def handle_database_errors(func):
@@ -58,15 +59,6 @@ class DatabaseConnector:
         # self.db_pool = asyncio.run(self._create_db_pool())
         print('Setup complete')
 
-    # async def _create_db_pool(self):
-    #     db_pool = psycopg2.pool.SimpleConnectionPool(
-    #         minconn=2,  # Minimum number of connections in the pool
-    #         maxconn=10,  # Maximum number of connections in the pool
-    #         # dsn="dbname=your_db_name user=your_db_user password=your_db_password host=your_db_host",
-    #         user=user_name, password=password,
-    #         host=host_name, database=self.database
-    #     )
-    #     return db_pool
 
     async def _create_db_pool(self):
         db_pool = await asyncpg.create_pool(
@@ -82,28 +74,17 @@ class DatabaseConnector:
         await self.db_pool.close()
         print("Pool closed")
 
-    # async def db_query(self, sql, *params, method='fetchall'):
-    #     conn = self.db_pool.getconn()
-    #     try:
-    #         with conn.cursor() as cur:
-    #             cur.execute(sql, params)
-    #             if method == 'fetchall':
-    #                 return cur.fetchall()
-    #             elif method == 'fetchone':
-    #                 return cur.fetchone()
-    #             elif method == 'execute':
-    #                 conn.commit()
-    #                 return None
-    #             else:
-    #                 raise ValueError("Invalid method parameter")
-    #     finally:
-    #         self.db_pool.putconn(conn)
-
     @handle_database_errors
     async def execute_query(self, sql, *params):
         async with self.db_pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(sql, *params)
+
+    @handle_database_errors
+    async def executemany_query(self, sql, *params):
+        async with self.db_pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.executemany(sql, *params)
 
     @handle_database_errors
     async def query_db(self, sql, *params, method='fetchall'):
@@ -127,6 +108,8 @@ class DatabaseConnector:
     async def db_query(self, sql, *params, method='fetchall'):
         if method == 'execute':
             await self.execute_query(sql, *params)
+        elif method == 'executemany':
+            await self.executemany_query(sql, *params)
         else:
             return await self.query_db(sql, *params, method=method)
 
@@ -159,14 +142,6 @@ class DatabaseConnector:
     #     if self.connection is not None:
     #         self.connection.close()
     #         print(f'Connection to {self.database} closed.')
-
-
-# class DatabaseInteractor:
-#     def __init__(self, cursor, conn, table=None, test=False):
-#         self.table = table.strip('.db') + '_test' if test else table.strip('.db') if table else None
-#         self.test = test
-#         self.cursor = cursor
-#         self.conn = conn
 
 
 class DatabaseInteractor:
@@ -212,41 +187,6 @@ class OptionsInteractor(DatabaseInteractor):
         await self.connector.db_query(sql, chat_id, DEFAULT_ROLE, method='execute')
 
 
-# class OptionsInteractor(DatabaseInteractor):
-#     def __init__(self, cursor, conn, table='options', test=False):
-#         super().__init__(cursor, conn, table, test)
-#
-#     @handle_database_errors
-#     async def check_role(self, chat_id):
-#         # get the gpt_role
-#         self.cursor.execute(f"SELECT gpt_role FROM {self.table} WHERE chat_id = %s", (chat_id,))
-#         try:
-#             gpt_role = self.cursor.fetchone()[0]
-#         except Exception:
-#             gpt_role = DEFAULT_ROLE
-#         return gpt_role
-#
-#     @handle_database_errors
-#     async def setup_role(self, chat_id, role):
-#         self.cursor.execute(f"UPDATE {self.table} SET gpt_role = %s WHERE chat_id = %s", (role, chat_id))
-#         self.conn.commit()
-#
-#     @handle_database_errors
-#     async def options_exist(self, chat_id):
-#         # Execute a query to retrieve the user by chat_id
-#         self.cursor.execute(f'SELECT * FROM {self.table} WHERE chat_id = %s', (chat_id,))
-#         if self.cursor.fetchone():
-#             return True
-#         return False
-#
-#     @handle_database_errors
-#     async def set_user_option(self, chat_id):
-#         # Add a new user option record
-#         self.cursor.execute(f"INSERT INTO {self.table} (chat_id, gpt_role) "
-#                             "VALUES (%s, %s)", (chat_id, DEFAULT_ROLE))
-#         self.conn.commit()
-
-
 class MessagesInteractor(DatabaseInteractor):
     def __init__(self, connector, table=MESSAGES_DATABASE, test=False):
         super().__init__(connector, table, test)
@@ -277,37 +217,6 @@ class MessagesInteractor(DatabaseInteractor):
     async def clear_messages(self, chat_id):
         sql = f'UPDATE {self.table} SET cleared = 1 WHERE chat_id = $1'
         await self.connector.db_query(sql, chat_id, method='execute')
-
-
-# class MessagesInteractor(DatabaseInteractor):
-#     def __init__(self, cursor, conn, table=MESSAGES_DATABASE, test=False):
-#         super().__init__(cursor, conn, table, test)
-#
-#     @handle_database_errors
-#     async def insert_message(self, chat_id, text, role, subscription_status, timestamp):
-#         self.cursor.execute(f"INSERT INTO {self.table} (timestamp, chat_id, role, message, subscription_status) "
-#                             "VALUES (%s, %s, %s, %s, %s)",
-#                             (timestamp, chat_id, role, text, subscription_status))
-#         self.conn.commit()
-#
-#     @handle_database_errors
-#     async def get_last_messages(self, chat_id, amount):
-#         self.cursor.execute(f"SELECT chat_id, role, message FROM {self.table} WHERE chat_id = %s AND CLEARED = 0 "
-#                             f"ORDER BY timestamp DESC LIMIT {amount}", (chat_id,))
-#         return self.cursor.fetchall()
-#
-#     @handle_database_errors
-#     async def check_message_limit(self, chat_id, subscription_status, start_of_day_timestamp):
-#         self.cursor.execute(f'SELECT COUNT(*) FROM {self.table} WHERE chat_id = %s AND role = %s AND '
-#                             f'subscription_status = %s '
-#                             'AND timestamp > %s',
-#                             (chat_id, 'user', subscription_status, start_of_day_timestamp))
-#         return self.cursor.fetchone()[0]
-#
-#     @handle_database_errors
-#     async def clear_messages(self, chat_id):
-#         self.cursor.execute(f'UPDATE {self.table} SET cleared = 1 WHERE chat_id = %s', (chat_id,))
-#         self.conn.commit()
 
 
 class SubscriptionsInteractor(DatabaseInteractor):
@@ -388,90 +297,13 @@ class SubscriptionsInteractor(DatabaseInteractor):
         await self.connector.db_query(sql, subscription_status, start_date, expiration_date, chat_id, method='execute')
 
 
-# class SubscriptionsInteractor(DatabaseInteractor):
-#     def __init__(self, cursor, conn, table=SUBSCRIPTION_DATABASE, test=False):
-#         super().__init__(cursor, conn, table, test)
-#
-#     @handle_database_errors
-#     async def get_free_messages(self, chat_id):
-#         # get the bonus free messages if exist
-#         self.cursor.execute(f"SELECT bonus_count FROM {self.table} WHERE chat_id = %s", (chat_id,))
-#         return self.cursor.fetchone()[0]
-#
-#     @handle_database_errors
-#     async def get_expiration_date(self, chat_id):
-#         # Retrieve the expiration date for the user
-#         self.cursor.execute(f"SELECT expiration_date FROM {self.table} WHERE chat_id = %s", (chat_id,))
-#         return self.cursor.fetchone()[0]
-#
-#     @handle_database_errors
-#     async def get_referral(self, chat_id):
-#         # Get a referral link from the database
-#         self.cursor.execute(f"SELECT referral_link FROM {self.table} WHERE chat_id = %s", (chat_id,))
-#         return self.cursor.fetchone()[0]
-#
-#     @handle_database_errors
-#     async def get_subscription(self, chat_id):
-#         # Get the subscription status, start date, and expiration date for the user
-#         self.cursor.execute(
-#             f"SELECT subscription_status, start_date, expiration_date FROM {self.table} WHERE chat_id = %s",
-#             (chat_id,))
-#         return self.cursor.fetchone()
-#
-#     @handle_database_errors
-#     async def user_exists(self, chat_id):
-#         # Execute a query to retrieve the user by chat_id
-#         self.cursor.execute(f'SELECT * FROM {self.table} WHERE chat_id = %s', (chat_id,))
-#         if self.cursor.fetchone():
-#             return True
-#         return False
-#
-#     @handle_database_errors
-#     async def referred_by(self, chat_id):
-#         self.cursor.execute(f"SELECT referred_by FROM {self.table} WHERE chat_id = %s", (chat_id,))
-#         return self.cursor.fetchone()[0]
-#
-#     @handle_database_errors
-#     async def add_referree(self, referree, chat_id):
-#         self.cursor.execute(f"UPDATE {self.table} SET referred_by = %s WHERE chat_id = %s", (referree, chat_id))
-#         self.conn.commit()
-#
-#     @handle_database_errors
-#     async def add_referral_bonus(self, referree, referral_bonus):
-#         # Execute the SQL query to increment the bonus count
-#         self.cursor.execute(f"UPDATE {self.table} SET bonus_count = bonus_count + {referral_bonus} WHERE chat_id = %s",
-#                             (referree,))
-#         self.conn.commit()
-#
-#     @handle_database_errors
-#     async def decrease_free_messages(self, chat_id, amount):
-#         # Execute the SQL query to decrement the free messages count
-#         self.cursor.execute(f"UPDATE {self.table} SET bonus_count = bonus_count - {amount} WHERE chat_id = %s",
-#                             (chat_id,))
-#         # Commit the changes to the database
-#         self.conn.commit()
-#
-#     @handle_database_errors
-#     async def add_new_user(self, user_id, revealed_date, referral_link):
-#         # Add a new user with default subscription status, start date, and expiration date
-#         self.cursor.execute(f"INSERT INTO {self.table} (chat_id, subscription_status, revealed_date, referral_link) "
-#                             "VALUES (%s, 0, %s, %s)", (user_id, revealed_date, referral_link))
-#         self.conn.commit()
-#
-#     @handle_database_errors
-#     async def update_subscription_status(self, chat_id, subscription_status, start_date, expiration_date):
-#         # Set the start and expiration dates for the user's subscription
-#         self.cursor.execute(f"UPDATE {self.table} SET subscription_status = %s, start_date = %s, expiration_date = %s "
-#                             f"WHERE chat_id = %s", (subscription_status, start_date, expiration_date, chat_id))
-#         self.conn.commit()
-
-
 class FantInteractor(DatabaseInteractor):
     tables_default = ["genre"]  # Replace with your table names
 
     def __init__(self, connector):
         super().__init__(connector)
         self.table = WORKS_DATABASE
+        self.work_genre_table = WORK_GENRES
 
     # TODO refacrot because of fetched records format
     @handle_database_errors
@@ -511,6 +343,7 @@ class FantInteractor(DatabaseInteractor):
         data_json = json.dumps(work.data)
         sql = f"INSERT INTO {self.table} (w_id, work_json) VALUES ($1, $2)"
         await self.connector.db_query(sql, work.id, data_json, method='execute')
+        print(f"Book {work.id} stored in DB")
         return "ok"
 
     @handle_database_errors
@@ -522,68 +355,18 @@ class FantInteractor(DatabaseInteractor):
             print(data_json)
         else:
             return None
-        return fantlab_nwe.Work(data_json)
+        return fantlab.Work(data_json)
+
+    @handle_database_errors
+    async def update_work_genres(self, work_id, genres: list):
+        sql = f"INSERT INTO {self.work_genre_table} (w_id, genre_id, genre_weight, weight_voters) VALUES ($1, $2, $3, $4)"
+        # values_placeholder = ", ".join(["($1, $2, $3, $4)"] * len(genres))
+        # sql += values_placeholder
+        # genres = [val for record in genres for val in record]
+        await self.connector.db_query(sql, genres, method='executemany')
+        return "ok"
 
 
-# class FantInteractor(DatabaseInteractor):
-#     tables_default = ["genre"]  # Replace with your table names
-#
-#     def __init__(self, cursor, conn):
-#         super().__init__(cursor, conn)
-#         self.table = WORKS_DATABASE
-#
-#     @staticmethod
-#     @handle_database_errors
-#     async def multiple_search(cursor, input_string, tables=None):
-#         # Split the input string into individual characteristics
-#         characteristics = [char.strip() for char in input_string.split(',')]
-#         # Define a list of table names to search
-#         table_names = tables or FantInteractor.tables_default
-#         # Dictionary to store results
-#         result_dict = {}
-#         # Iterate through each characteristic and search in each table
-#         for characteristic in characteristics:
-#             for table_name in table_names:
-#                 # print(f'Searching "{characteristic}" in "{table_name}"')
-#                 # Replace "column_name" with the column you want to search in
-#                 query = f"SELECT wg_id, parent_id FROM {table_name} WHERE name ILIKE %s"
-#                 # query = f"SELECT wg_id, parent_id FROM {table_name} WHERE to_tsvector('russian', name) @@
-#                 # to_tsquery('russian', %s)"
-#                 cursor.execute(query, [f"%{characteristic}%"])
-#                 records = cursor.fetchall()
-#                 if records:
-#                     # print('Got the match:')
-#                     if characteristic in result_dict:
-#                         result_dict[characteristic].append((table_name, records[0]))
-#                         # print(records[0])
-#                     else:
-#                         result_dict[characteristic] = [(table_name, records[0])]
-#         return result_dict.items()
-#
-#     @handle_database_errors
-#     def store_work(self, work):
-#         # check if the work is already in db
-#         self.cursor.execute(f"SELECT EXISTS (SELECT 1 FROM {self.table} WHERE w_id = %s)", (work.id, ))
-#         result = self.cursor.fetchone()
-#         if result and result[0]:
-#             print('Book exists in DB')
-#             return "Book exists in DB"
-#         data_json = json.dumps(work.data)
-#         self.cursor.execute(f"INSERT INTO {self.table} (w_id, work_json) VALUES (%s, %s)",
-#                             (work.id, data_json))
-#         self.conn.commit()
-#         return "ok"
-#
-#     @handle_database_errors
-#     def get_work_db(self, work_id):
-#         self.cursor.execute(f"SELECT work_json FROM {self.table} WHERE w_id = %s", (work_id, ))
-#         result = self.cursor.fetchone()
-#         if result:
-#             data_json = result[0]
-#             print(data_json)
-#         else:
-#             return None
-#         return fantlab_nwe.Work(data_json)
 
 
 async def checker():

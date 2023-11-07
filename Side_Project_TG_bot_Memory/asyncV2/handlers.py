@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 
 from datetime import datetime, timedelta
-import fantlab_nwe
+import fantlab
 import random
+import requests
 
 
 class Handler:
@@ -71,7 +72,7 @@ class Handler:
         #     print('Coulndt send the info message', e)
 
     async def start_command(self, chat_id, name, day_limit_private, day_limit_subscription, referral_bonus,
-                                   month_subscription_price, set_keyboard):
+                            month_subscription_price, set_keyboard):
         message = f'''{name}, приветствую!
 
     ⚡️Я бот, работающий на ChatGPT 3.5.turbo
@@ -128,9 +129,9 @@ class Handler:
 
     async def handle_recom_command(self, chat_id, markup):
         # Initialize the Fantlab_api with the base URL
-        api_connect = fantlab_nwe.FantlabApi()
+        api_connect = fantlab.FantlabApi()
         # Initialize Service A with the ServiceBClient
-        service = fantlab_nwe.BookDatabase(api_connect)
+        service = fantlab.BookDatabase(api_connect)
         message = f"Для точного подбора нужно знать о ваших предпочтениях"
         await self.telegram_ext.send_text(message, chat_id, None, markup)
 
@@ -149,3 +150,28 @@ class Handler:
         # except requests.exceptions.RequestException as e:
         #     print('Coulndt send the help message', e)
         await self.telegram_ext.send_text(message, chat_id)
+
+    async def successful_payment_in_message(self, result):
+        try:
+            if result['message']['successful_payment']:
+                try:
+                    await self.telegram_ext.handle_successful_payment(result['message'], self.subs_ext)
+                    print('Successful payment')
+                    # last_update = str(int(result['update_id']))
+                except requests.exceptions.RequestException as e:
+                    print('Couldnt handle the payment')
+                    # last_update = str(int(result['update_id']))
+                    await self.telegram_ext.send_text('Не удалось завершить оплату. Пожалуйста, попробуйте ещё раз!',
+                                                      result['pre_checkout_query']['from']['id'])
+                return True
+        except Exception as e:
+            return False
+        return False
+
+    async def text_in_message(self, result, chat_id, msg_id):
+        if not ('text' in result.get('message')):
+            print('Got the non-text message')
+            await self.telegram_ext.send_text("Извините, пока что я умею обрабатывать только текст",
+                                              chat_id, msg_id)
+            return False
+        return True

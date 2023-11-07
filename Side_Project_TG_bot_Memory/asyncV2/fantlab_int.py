@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import database_work
-import fantlab_nwe
+import fantlab
 import fantlab_page_find
 
 
@@ -35,7 +35,7 @@ if __name__ == "__main__":
     print(url)
 
     books = await fantlab_page_find.FantlabParser.parse_books(url, 5)
-    fantlab_nwe.print_books(books)
+    fantlab.print_books(books)
 
     fant_db.close_db_pool()
 

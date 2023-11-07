@@ -3,7 +3,7 @@
 from bs4 import BeautifulSoup
 import requests
 import asyncio
-from fantlab_nwe import FantlabApi, BookDatabase
+from fantlab import FantlabApi, BookDatabase
 
 base_url = "https://fantlab.ru/bygenre?"
 
