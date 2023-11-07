@@ -5,8 +5,8 @@ import fantlab_nwe
 import fantlab_page_find
 
 
-def search_by_string(cursor, string):
-    result = database_work.FantInteractor.multiple_search(cursor, string)
+async def search_by_string(cursor, string):
+    result = await database_work.FantInteractor.multiple_search(cursor, string)
     ids = set()
     # Print the results
     for characteristic, records in result:
@@ -25,19 +25,18 @@ def search_by_string(cursor, string):
 if __name__ == "__main__":
 
     fant_db = database_work.DatabaseConnector('fantlab')
-    fant_cursor = fant_db.get_cursor()
-    fant_ext = database_work.FantInteractor(fant_cursor, fant_db.connection)
+    fant_ext = database_work.FantInteractor(fant_db)
 
     input_string = "фантастика, бластеры"
 
-    items = search_by_string(fant_cursor, input_string)
+    items = search_by_string(fant_ext, input_string)
     url = f'https://fantlab.ru/bygenre?form=&{items}' + '=on&'
     print('For the search string', input_string, 'we got the following:')
     print(url)
 
-    books = fantlab_page_find.FantlabParser.parse_books(url, 5)
+    books = await fantlab_page_find.FantlabParser.parse_books(url, 5)
     fantlab_nwe.print_books(books)
 
-    fant_db.close_connection()
+    fant_db.close_db_pool()
 
 # TODO make different searches

@@ -1,18 +1,19 @@
 # version 0.0.1, working on news
 
-import requests, re, sys
-import memory
+import requests
+import sys
 import asyncio
 import time
 from retrying_async import retry
 from datetime import datetime
-import fantlab_nwe, database_work, handlers, research, telegram_int
+import fantlab_nwe, database_work, handlers, telegram_int
 from OpenAI import openAI
+from group_handle import handle_supergroup
 
-from constants import BOT_TOKEN, ALLOWED_GROUP_ID, CHATBOT_HANDLE, BOT_NAME, FILENAME, \
-    ASK_COMMAND, CLEAR_COMMAND, START_COMMAND, INFO_COMMAND, REFERRAL_COMMAND, HELP_COMMAND, RECOM_COMMAND, \
+from constants import BOT_TOKEN, BOT_NAME, FILENAME, \
+    CLEAR_COMMAND, START_COMMAND, INFO_COMMAND, REFERRAL_COMMAND, HELP_COMMAND, RECOM_COMMAND, \
     SUBSCRIPTION_COMMAND, CHANNEL_NAME, CHANNEL_NAME_RUS, TEST, DAY_LIMIT_PRIVATE, DAY_LIMIT_SUBSCRIPTION, \
-    CONTEXT_DEPTH, MAX_TOKENS, REFERRAL_BONUS, MONTH_SUBSCRIPTION_PRICE, file, CHECK_MARK, LITERATURE_EXPERT_ROLE, \
+    CONTEXT_DEPTH, MAX_TOKENS, REFERRAL_BONUS, MONTH_SUBSCRIPTION_PRICE, CHECK_MARK, LITERATURE_EXPERT_ROLE, \
     LITERATURE_EXPERT_ROLE_RUS, DEFAULT_ROLE, DEFAULT_ROLE_RUS, ROLES, ROLES_ZIP, LIKE, DISLIKE, RATE, CALLBACKS, \
     RANDOM_BOOK_COMMAND, RECOMMEND_COMMAND, RECOMMENDATION_EXIT_COMMAND, PREFERENCES_COMMAND
 
@@ -25,7 +26,6 @@ if sys.stderr.encoding != 'utf-8':
 
 # new connectors
 connector = database_work.DatabaseConnector('fantlab')
-# cursor = connector.get_cursor()
 
 # extractors for the database tables
 mess_ext = database_work.MessagesInteractor(connector, test=TEST)
@@ -204,12 +204,14 @@ async def parse_updates(result, last_update):
         try:
             if result['pre_checkout_query']:
                 try:
+                    last_update = str(int(result['update_id']))
+                    write_update(last_update)
                     await telegram.handle_pre_checkout_query(result)
                     print('Successful checkout')
-                    last_update = str(int(result['update_id']))
                 except requests.exceptions.RequestException as e:
                     print('Couldnt handle the pre checkout')
                     last_update = str(int(result['update_id']))
+                    write_update(last_update)
                     await telegram.send_text('Не удалось провести оплату. Пожалуйста, попробуйте ещё раз!',
                                              result['pre_checkout_query']['from']['id'])
                 return last_update
@@ -221,6 +223,7 @@ async def parse_updates(result, last_update):
                 channel = result['channel_post']['sender_chat']['title']
                 print(f'We have got a channel post in {channel}')
                 last_update = str(int(result['update_id']))
+                write_update(last_update)
                 return last_update
         except Exception as e:
             pass
@@ -230,6 +233,7 @@ async def parse_updates(result, last_update):
                 channel = result['edited_channel_post']['sender_chat']['title']
                 print(f'We have got a update to a channel post in {channel}')
                 last_update = str(int(result['update_id']))
+                write_update(last_update)
                 return last_update
         except Exception as e:
             pass
@@ -237,8 +241,9 @@ async def parse_updates(result, last_update):
         try:
             if result['callback_query']:
                 print("HERE IN UPDATES")
-                await handle_callback_query(result['callback_query'])
                 last_update = str(int(result['update_id']))
+                write_update(last_update)
+                await handle_callback_query(result['callback_query'])
                 return last_update
         except Exception as e:
             print(e)
@@ -247,10 +252,11 @@ async def parse_updates(result, last_update):
         if not result['message']['from']['is_bot']:
             # remember the last update number
             last_update = str(int(result['update_id']))
+            write_update(last_update)
             chat_type = str(result['message']['chat']['type'])
             # check if it's a group
             if chat_type == 'supergroup':
-                await handle_supergroup(result)
+                await handle_supergroup(result, telegram)
             # check if it's a private chat
             if chat_type == 'private':
                 await handle_private(result)
@@ -258,111 +264,6 @@ async def parse_updates(result, last_update):
                 pass
 
     return last_update
-
-
-async def handle_supergroup(result):
-    print('SuperDooper')
-    # Give your bot a personality using adjectives from the tone list
-    bot_personality = ''
-    tone_list = ['Friendly', 'Professional', 'Humorous', 'Sarcastic', 'Witty', 'Sassy', 'Charming', 'Cheeky', 'Quirky',
-                 'Laid-back', 'Elegant', 'Playful', 'Soothing', 'Intense', 'Passionate']
-    # Leave write_history BLANK
-    write_history = ''
-    chat_id = str(result['message']['chat']['id'])
-    prompt = ""
-    if chat_id in ALLOWED_GROUP_ID:
-        msg_id = str(int(result['message']['message_id']))
-        # print('In allowed group ID')
-        try:
-            # Greeting message for new participants
-            if 'new_chat_participant' in result['message']:
-                prompt = 'Напиши в дружелюбном тоне  ' + \
-                         "Приветствую! Буду рад помочь вам, " + \
-                         result['message']['new_chat_participant']['first_name']
-                # random.choice(tone_list) + ' tone: ' + \
-
-                bot_response = await openAI(prompt, 200, None)
-
-                await telegram.send_text(bot_response, chat_id, msg_id)
-                name = result['message']['new_chat_participant']['first_name']
-
-                await telegram.send_text(f'Новый пользователь - {name}', '163905035')
-        except Exception as e:
-            print("Error in greeting", e)
-
-        # try:
-        #     if '/img' in result['message']['text']:
-        #         prompt = result['message']['text'].replace("/img", "")
-        #         bot_response = await openAImage(prompt)
-        #         x = await telegram_bot_sendimage(bot_response, chat_id, msg_id)
-        # except Exception as e:
-        #     print(e)
-
-        boolean_active = False
-        # Checking that user mentionned chatbot's username in message
-        if CHATBOT_HANDLE in result['message']['text']:
-            prompt = result['message']['text'].replace(CHATBOT_HANDLE, "")
-            boolean_active = True
-            print('Got the Message, master!')
-
-        # Verifying that the user is responding to the ChatGPT bot
-        if 'reply_to_message' in result['message']:
-            if result['message']['reply_to_message']['from']['username'] == CHATBOT_HANDLE[1:]:
-                prompt = result['message']['text']
-                # Getting historical messages from user
-                write_history = await memory.get_channel_messages(chat_id, msg_id)
-                boolean_active = True
-
-        if boolean_active:
-            try:
-                prompt1 = await checkTone(prompt)
-                prompt = prompt1[0]
-                bot_personality = prompt1[1]
-                boolean_active = True
-            except Exception as e:
-                print("Error at await checkTone", e)
-            try:
-                if write_history != '':
-                    prompt = write_history + "\n\nQ : " + prompt + "\n\n###\n\n"
-
-                try:
-                    bot_response = await openAI(f"{bot_personality}{prompt}", 400, None)
-                except requests.exceptions.RequestException as e:
-                    print("Error while waiting for the answer from OpenAI", e)
-                    bot_response = "Empty"
-                #
-                # if bot_response == '':
-                #     bot_response = await openAI(f"{bot_personality}{vague_prompt}", 400, None)
-
-                await telegram.send_text(bot_response, chat_id, msg_id)
-
-                # x = await telegram_bot_sendtext('I just sent some message', '163905035', None)
-
-            except Exception as e:
-                print("Error while waiting for the answer from OpenAI", e)
-
-                await telegram.send_text("Ответ от центрального мозга потерялся в дороге",
-                                         chat_id, msg_id)
-
-                await telegram.send_text(f"OpenAI не ответил вовремя - {e}", '163905035', None)
-
-        if ASK_COMMAND in result['message']['text']:
-            prompt = result['message']['text'].replace(ASK_COMMAND, "")
-            asked = True
-            print('Got the /ask command, master!')
-            try:
-                answer = research.reply(file, prompt)
-
-                await telegram.send_text(answer, chat_id, msg_id)
-            except Exception as e:
-                print("Error while waiting for the answer with from OpenAI for the /ask", e)
-
-                await telegram.send_text("Этот книжный вопрос поломал логику",
-                                         chat_id, msg_id)
-
-                await telegram.send_text(f"OpenAI не ответил вовремя на /ask - {e}",
-                                         '163905035', None)
-                print("Couldn't handle the /ask command", e)
 
 
 async def handle_private(result):
@@ -376,11 +277,6 @@ async def handle_private(result):
             except requests.exceptions.RequestException as e:
                 print('Couldnt handle the payment')
                 # last_update = str(int(result['update_id']))
-                # try:
-                #     x = telegram_bot_sendtext('Не удалось завершить оплату. Пожалуйста, попробуйте ещё раз!',
-                #                               result['pre_checkout_query']['from']['id'])
-                # except requests.exceptions.RequestException as e:
-                #     print('Couldnt send the Try payment again message', e)
                 await telegram.send_text('Не удалось завершить оплату. Пожалуйста, попробуйте ещё раз!',
                                          result['pre_checkout_query']['from']['id'])
             return
@@ -400,11 +296,6 @@ async def handle_private(result):
     # check if we got the text, else skip
     if not 'text' in result.get('message'):
         print('Got the non-text message')
-        # try:
-        #     x = await telegram_bot_sendtext("Извините, пока что я умею обрабатывать только текст",
-        #                                     chat_id, msg_id)
-        # except requests.exceptions.RequestException as e:
-        #     print('Error in sending text to TG', e)
         await telegram.send_text("Извините, пока что я умею обрабатывать только текст",
                                  chat_id, msg_id)
         return
@@ -450,11 +341,6 @@ async def handle_private(result):
         try:
             # await handle_clear_command(chat_id)
             await handler.handle_clear_command(chat_id)
-            # try:
-            #     x = await telegram_bot_sendtext("Диалог сброшен",
-            #                                     chat_id, msg_id, set_keyboard(chat_id))
-            # except requests.exceptions.RequestException as e:
-            #     print('Error in sending text to TG', e)
             await telegram.send_text("Диалог сброшен",
                                      chat_id, msg_id, await set_keyboard_roles(chat_id))
             return
@@ -625,17 +511,6 @@ def rate(chat_id, work_id):
     pass
 
 
-# Checking for specific tone for message
-async def checkTone(user_message):
-    bot_personality = ''
-    match = re.search(r"/setTone\((.*?)\)", user_message, flags=re.IGNORECASE)
-    if match:
-        substring = match.group(1)
-        bot_personality = 'Answer in a ' + substring + ' tone, '
-        user_message = user_message.replace('/setTone(' + substring + ')', '')
-    return [user_message, bot_personality]
-
-
 async def add_new_user(user_id):
     revealed_date = datetime.now().strftime('%Y-%m-%d')
     referral_link = f'https://t.me/{BOT_NAME}?start={user_id}'
@@ -686,11 +561,21 @@ async def check_subscription_validity(chat_id):
     return False
 
 
+def write_update(last_update):
+    # Updating file with last update ID
+    with open(FILENAME, 'w') as f:
+        f.write(last_update)
+    return "done"
+
+
 async def ChatGPTbot():
+    # read the last update id parsed
     with open(FILENAME) as f:
         last_update = f.read()
     f.close()
-    # get updates for the bot
+    print('The last update in the file:', last_update)
+
+    # get updates for the bot from telegram
     try:
         result = await telegram.get_updates(last_update)
     except requests.exceptions.RequestException as e:
@@ -708,16 +593,17 @@ async def ChatGPTbot():
     #     await telegram.send_text(f"Случилась общая ошибка в коде - {e}", '163905035')
 
     # new version of parsing updates with async.gather
+    # create the list of function calls for each update
     parsers = [parse_updates(res, last_update) for res in result]
+    # parallel parsing for each result, returns the new update id
     parallel_result = await asyncio.gather(*parsers)
-    if parallel_result:
-        last_update = str(max([int(element) for element in parallel_result]))
-    print('UPDATES:', parallel_result, '\n', last_update)
 
-    # Updating file with last update ID
-    with open(FILENAME, 'w') as f:
-        f.write(last_update)
-    return "done"
+    # if parallel_result:
+    #     last_update = str(max([int(element) for element in parallel_result]))
+    # print('UPDATES:', parallel_result, '\n Last update:', last_update)
+
+    # write last update to the file
+    # write_update(last_update)
 
 
 # async def main():
@@ -739,13 +625,22 @@ async def client_interactions_with_delay(client_interactions, delay=1):
         await asyncio.sleep(delay)
 
 
+# async def client_interactions_with_delay(client_interaction, delay=1):
+#     await asyncio.sleep(delay)
+#     await client_interaction
+
+# new main with async.gather
 async def main():
-    connector.db_pool = await connector._create_db_pool()
+    # connector.db_pool = await connector._create_db_pool()
     while True:
+        connector.db_pool = await connector._create_db_pool()
+
         client_interactions = [ChatGPTbot() for _ in range(5)]
+        # client_interactions = [client_interactions_with_delay(ChatGPTbot(), 5) for _ in range(5)]
+
         try:
             await client_interactions_with_delay(client_interactions, delay=5)
-            # await asyncio.gather(*client_interactions_with_delay)
+            # await asyncio.gather(*client_interactions)
         except TypeError as e:
             print('Typeerror', e)
         # try:

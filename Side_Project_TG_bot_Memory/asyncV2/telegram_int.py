@@ -59,7 +59,7 @@ class TelegramInt:
         if reply_markup:
             reply_markup = json.dumps(reply_markup)
             payload['reply_markup'] = reply_markup
-        print("TG sending the text", payload)
+        print("TG sending the photo", payload)
         response = requests.post(
             self.base_url + self.bot_token + '/sendPhoto',
             json=payload, timeout=10

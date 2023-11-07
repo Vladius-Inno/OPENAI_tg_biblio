@@ -504,7 +504,7 @@ class FantInteractor(DatabaseInteractor):
     async def store_work(self, work):
         # check if the work is already in db
         sql = f"SELECT EXISTS (SELECT 1 FROM {self.table} WHERE w_id = $1)"
-        result = await self.connector(sql, work.id, method='fetchone')
+        result = await self.connector.db_query(sql, work.id, method='fetchone')
         if result and result[0]:
             print('Book exists in DB')
             return "Book exists in DB"
