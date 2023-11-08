@@ -22,6 +22,8 @@ DEFAULT_ROLE = 'default_role'
 
 WORKS_DATABASE = 'works'
 WORK_GENRES = "work_genres"
+USER_ACTIONS = "user_actions"
+
 
 
 def handle_database_errors(func):
@@ -304,6 +306,7 @@ class FantInteractor(DatabaseInteractor):
         super().__init__(connector)
         self.table = WORKS_DATABASE
         self.work_genre_table = WORK_GENRES
+        self.user_actions_table = USER_ACTIONS
 
     # TODO refacrot because of fetched records format
     @handle_database_errors
@@ -333,16 +336,30 @@ class FantInteractor(DatabaseInteractor):
         return result_dict.items()
 
     @handle_database_errors
-    async def store_work(self, work):
-        # check if the work is already in db
+    async def work_in_db(self, work):
+        # if the work is given - extract the id
+        if isinstance(work, fantlab.Work):
+            work = work.id
         sql = f"SELECT EXISTS (SELECT 1 FROM {self.table} WHERE w_id = $1)"
-        result = await self.connector.db_query(sql, work.id, method='fetchone')
+        result = await self.connector.db_query(sql, work, method='fetchone')
         if result and result[0]:
             print('Book exists in DB')
+            return True
+        return False
+
+    @handle_database_errors
+    async def store_work(self, work):
+        # check if the work is already in db
+        # sql = f"SELECT EXISTS (SELECT 1 FROM {self.table} WHERE w_id = $1)"
+        # result = await self.connector.db_query(sql, work.id, method='fetchone')
+        # if result and result[0]:
+        #     print('Book exists in DB')
+        #     return "Book exists in DB"
+        if await self.work_in_db(work):
             return "Book exists in DB"
         data_json = json.dumps(work.data)
-        sql = f"INSERT INTO {self.table} (w_id, work_json) VALUES ($1, $2)"
-        await self.connector.db_query(sql, work.id, data_json, method='execute')
+        sql = f"INSERT INTO {self.table} (w_id, work_json, image, type) VALUES ($1, $2, $3, $4)"
+        await self.connector.db_query(sql, work.id, data_json, work.image, work.work_type, method='execute')
         print(f"Book {work.id} stored in DB")
         return "ok"
 
@@ -366,7 +383,17 @@ class FantInteractor(DatabaseInteractor):
         await self.connector.db_query(sql, genres, method='executemany')
         return "ok"
 
+    @handle_database_errors
+    async def update_similars(self, work_id, similars: list):
+        sql = f"UPDATE {self.table} SET similars = $1 WHERE w_id = $2"
+        await self.connector.db_query(sql, similars, work_id, method='execute')
+        return "ok"
 
+    @handle_database_errors
+    async def update_user_prefs(self, chat_id, work_id, pref):
+        sql = f"INSERT INTO {self.user_actions_table} (chat_id, w_id, action_type) VALUES ($1, $2, $3)"
+        await self.connector.db_query(sql, chat_id, work_id, pref)
+        pass
 
 
 async def checker():
