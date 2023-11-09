@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 
-import psycopg2
-import psycopg2.pool
 import asyncpg
-from aiohttp import web
 import os
 import json
 import asyncio
@@ -338,8 +335,14 @@ class FantInteractor(DatabaseInteractor):
     @handle_database_errors
     async def work_in_db(self, work):
         # if the work is given - extract the id
-        if isinstance(work, fantlab.Work):
+        # print(type(work))
+        # print(type(fantlab.Work))
+        try:
+        # if str(type(work)) == "<class '__main__.Work'>":
+        #     print('is an instance')
             work = work.id
+        except Exception as e:
+            pass
         sql = f"SELECT EXISTS (SELECT 1 FROM {self.table} WHERE w_id = $1)"
         result = await self.connector.db_query(sql, work, method='fetchone')
         if result and result[0]:
@@ -356,12 +359,12 @@ class FantInteractor(DatabaseInteractor):
         #     print('Book exists in DB')
         #     return "Book exists in DB"
         if await self.work_in_db(work):
-            return "Book exists in DB"
+            return False
         data_json = json.dumps(work.data)
         sql = f"INSERT INTO {self.table} (w_id, work_json, image, type) VALUES ($1, $2, $3, $4)"
         await self.connector.db_query(sql, work.id, data_json, work.image, work.work_type, method='execute')
         print(f"Book {work.id} stored in DB")
-        return "ok"
+        return True
 
     @handle_database_errors
     async def get_work_db(self, work_id):
@@ -390,10 +393,23 @@ class FantInteractor(DatabaseInteractor):
         return "ok"
 
     @handle_database_errors
-    async def update_user_prefs(self, chat_id, work_id, pref):
+    async def update_user_prefs(self, chat_id, work_id, pref, rate=None):
+        # if one rates the work
+        if rate:
+            sql = f"INSERT INTO {self.user_actions_table} (chat_id, w_id, action_type, rate) VALUES ($1, $2, $3, $4)"
+            await self.connector.db_query(sql, chat_id, work_id, pref, rate)
+            return
+
+        # if one reverts like or dislike
+        if pref in ['unlike', 'undislike']:
+            sql = f'DELETE from {self.user_actions_table} WHERE chat_id = $1 and w_id = $2'
+            await self.connector.db_query(sql, chat_id, work_id, method='execute')
+            return
+
+        # if one likes or dislikes the work
         sql = f"INSERT INTO {self.user_actions_table} (chat_id, w_id, action_type) VALUES ($1, $2, $3)"
         await self.connector.db_query(sql, chat_id, work_id, pref)
-        pass
+        return
 
 
 async def checker():

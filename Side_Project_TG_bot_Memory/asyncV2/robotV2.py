@@ -10,7 +10,8 @@ import fantlab, database_work, handlers, telegram_int
 from OpenAI import openAI
 from group_handle import handle_supergroup
 
-from constants import BOT_TOKEN, BOT_NAME, FILENAME, \
+from constants import BOT_TOKEN, BOT_NAME, FILENAME, RATE_1, RATE_2, RATE_3, RATE_4, RATE_5, RATE_6, RATE_7, RATE_8, \
+    RATE_9, RATE_10, DONT_RATE,  RATES, UNLIKE, UNDISLIKE, UNRATE, \
     CLEAR_COMMAND, START_COMMAND, INFO_COMMAND, REFERRAL_COMMAND, HELP_COMMAND, RECOM_COMMAND, \
     SUBSCRIPTION_COMMAND, CHANNEL_NAME, CHANNEL_NAME_RUS, TEST, DAY_LIMIT_PRIVATE, DAY_LIMIT_SUBSCRIPTION, \
     CONTEXT_DEPTH, MAX_TOKENS, REFERRAL_BONUS, MONTH_SUBSCRIPTION_PRICE, CHECK_MARK, LITERATURE_EXPERT_ROLE, \
@@ -46,27 +47,28 @@ service = fantlab.BookDatabase(api_connect)
 
 async def handle_random_book(chat_id):
     # get the book from Fantlab
-    work = await service.get_random_work(image_on=True)
+    work = await service.get_random_work(image_on=False)
     # send the book to TG
     await telegram.send_work(work, chat_id, set_keyboard_rate_work(work.id))
     # store the book in the DB
-    await fant_ext.store_work(work)
-    # get the extended data to extract characteristics
-    ext_work = await service.get_extended_work(work.id)
-    print(f'Got the extended data for book {ext_work.id}')
-    genres = ext_work.get_characteristics()
-    if genres:
-        await fant_ext.update_work_genres(work.id, genres)
-        print(f'Genres for book {ext_work.id} updated')
-    else:
-        print(f"Book {ext_work.id} isn't classified")
-    # get the similar books
-    similar_books = await service.get_similars(work.id)
-    if similar_books:
-        await fant_ext.update_similars(work.id, similar_books)
-        print(f"Updated the similars for {work.id}")
-    else:
-        print(f'No similars for {work.id}')
+    stored = await fant_ext.store_work(work)
+    if stored:
+        # get the extended data to extract characteristics
+        ext_work = await service.get_extended_work(work.id)
+        print(f'Got the extended data for book {ext_work.id}')
+        genres = ext_work.get_characteristics()
+        if genres:
+            await fant_ext.update_work_genres(work.id, genres)
+            print(f'Genres for book {ext_work.id} updated')
+        else:
+            print(f"Book {ext_work.id} isn't classified")
+        # get the similar books
+        similar_books = await service.get_similars(work.id)
+        if similar_books:
+            await fant_ext.update_similars(work.id, similar_books)
+            print(f"Updated the similars for {work.id}")
+        else:
+            print(f'No similars for {work.id}')
 
     return work.id, chat_id
 
@@ -491,12 +493,23 @@ async def handle_callback_query(callback_query):
 
     if callback_data.split()[0] in CALLBACKS:
         print('Here comes the callback', callback_data)
+        # transfer the chat_id, the work_id which is extracted from the callback, and the msg_id
         if callback_data.split()[0] == LIKE:
             await like(chat_id, int(callback_data.split()[1]), msg_id)
         if callback_data.split()[0] == DISLIKE:
             await dislike(chat_id, int(callback_data.split()[1]), msg_id)
         if callback_data.split()[0] == RATE:
-            rate(chat_id, callback_data.split()[1])
+            await rate(chat_id, callback_data.split()[1], msg_id)
+        if callback_data.split()[0] in RATES:
+            await rate_digit(chat_id, int(callback_data.split()[1]), msg_id, callback_data.split()[0])
+        if callback_data.split()[0] == UNLIKE:
+            await unlike(chat_id, int(callback_data.split()[1]), msg_id)
+        if callback_data.split()[0] == UNDISLIKE:
+            await undislike(chat_id, int(callback_data.split()[1]), msg_id)
+        if callback_data.split()[0] == UNRATE:
+            # await unrate(chat_id, callback_data.split()[1], msg_id)
+            pass
+
         return True
 
 
@@ -508,13 +521,37 @@ async def like(chat_id, work_id, msg_id):
     keyboard = {
         'inline_keyboard': [[
             {'text': "Unlike", 'callback_data': f'UNLIKE {work_id}'},
-            {'text': "smth else", 'callback_data': f'SMTH {work_id}'}
+            {'text': "Rate", 'callback_data': f'{RATE} {work_id}'}
         ]]
     }
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
     await fant_ext.update_user_prefs(chat_id, work_id, 'like')
     print(f'User {chat_id} preference updated')
+
+
+async def unlike(chat_id, work_id, msg_id):
+
+    print(chat_id, 'UnLikes', work_id)
+
+    # change the inline-keyboard
+    keyboard = set_keyboard_rate_work(work_id)
+    await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
+
+    await fant_ext.update_user_prefs(chat_id, work_id, 'unlike')
+    print(f'User {chat_id} preference deleted')
+
+
+async def undislike(chat_id, work_id, msg_id):
+
+    print(chat_id, 'UnDisikes', work_id)
+
+    # change the inline-keyboard
+    keyboard = set_keyboard_rate_work(work_id)
+    await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
+
+    await fant_ext.update_user_prefs(chat_id, work_id, 'undislike')
+    print(f'User {chat_id} preference deleted')
 
 
 async def dislike(chat_id, work_id, msg_id):
@@ -524,8 +561,8 @@ async def dislike(chat_id, work_id, msg_id):
     # change the inline-keyboard
     keyboard = {
         'inline_keyboard': [[
-            {'text': "Undislike", 'callback_data': f'UNLIKE {work_id}'},
-            {'text': "smth else", 'callback_data': f'SMTH {work_id}'}
+            {'text': "Undislike", 'callback_data': f'UNDISLIKE {work_id}'},
+            {'text': "Rate", 'callback_data': f'{RATE} {work_id}'}
         ]]
     }
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
@@ -534,9 +571,51 @@ async def dislike(chat_id, work_id, msg_id):
     print(f'User {chat_id} preference updated')
 
 
-def rate(chat_id, work_id):
-    pass
+async def rate(chat_id, work_id, msg_id):
+    print(chat_id, 'is going to rate', work_id)
 
+    # change the inline-keyboard
+    keyboard = {
+        'inline_keyboard': [[
+            {'text': "1", 'callback_data': f'{RATE_1} {work_id}'},
+            {'text': "2", 'callback_data': f'{RATE_2} {work_id}'},
+            {'text': "3", 'callback_data': f'{RATE_3} {work_id}'},
+            {'text': "4", 'callback_data': f'{RATE_4} {work_id}'},
+            {'text': "5", 'callback_data': f'{RATE_5} {work_id}'}
+        ], [
+            {'text': "6", 'callback_data': f'{RATE_6} {work_id}'},
+            {'text': "7", 'callback_data': f'{RATE_7} {work_id}'},
+            {'text': "8", 'callback_data': f'{RATE_8} {work_id}'},
+            {'text': "9", 'callback_data': f'{RATE_9} {work_id}'},
+            {'text': "10", 'callback_data': f'{RATE_10} {work_id}'}
+        ],
+            [{'text': "Don't rate", 'callback_data': f'{DONT_RATE} {work_id}'}]
+
+        ]
+    }
+    await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
+
+
+async def rate_digit(chat_id, work_id, msg_id, rate_string):
+
+    if rate_string not in RATES:
+        return
+    rate_digit = RATES.index(rate_string) + 1
+    print(f'{chat_id} rates {work_id} as {rate_digit}')
+
+    text = f"Rated {rate_digit}. Change?"
+
+    # change the inline-keyboard
+    keyboard = {
+        'inline_keyboard': [[
+            {'text': text, 'callback_data': f'CHANGE_RATE {work_id}'},
+            {'text': "smth else", 'callback_data': f'SMTH {work_id}'}
+        ]]
+    }
+    await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
+
+    await fant_ext.update_user_prefs(chat_id, work_id, 'rate', rate_digit)
+    print(f'User {chat_id} preference updated')
 
 async def add_new_user(user_id):
     revealed_date = datetime.now().strftime('%Y-%m-%d')
