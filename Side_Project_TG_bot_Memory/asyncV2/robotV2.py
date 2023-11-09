@@ -246,6 +246,7 @@ async def subcribe_channel(chat_id):
 async def parse_updates(result, last_update):
     if float(result['update_id']) > float(last_update):
         print('Start parsing', result['update_id'])
+        print('Start parsing', result['update_id'])
         # handle the pre_check_out
         # TODO Drag to the payment lib
         try:
@@ -507,8 +508,9 @@ async def handle_callback_query(callback_query):
         if callback_data.split()[0] == UNDISLIKE:
             await undislike(chat_id, int(callback_data.split()[1]), msg_id)
         if callback_data.split()[0] == UNRATE:
-            # await unrate(chat_id, callback_data.split()[1], msg_id)
-            pass
+            await unrate(chat_id, int(callback_data.split()[1]), msg_id)
+        if callback_data.split()[0] == DONT_RATE:
+            await dont_rate(chat_id, int(callback_data.split()[1]), msg_id)
 
         return True
 
@@ -539,6 +541,18 @@ async def unlike(chat_id, work_id, msg_id):
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
     await fant_ext.update_user_prefs(chat_id, work_id, 'unlike')
+    print(f'User {chat_id} preference deleted')
+
+
+async def unrate(chat_id, work_id, msg_id):
+
+    print(chat_id, 'UnRates', work_id)
+
+    # change the inline-keyboard
+    keyboard = set_keyboard_rate_work(work_id)
+    await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
+
+    await fant_ext.update_user_prefs(chat_id, work_id, 'unrate')
     print(f'User {chat_id} preference deleted')
 
 
@@ -596,6 +610,13 @@ async def rate(chat_id, work_id, msg_id):
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
 
+async def dont_rate(chat_id, work_id, msg_id):
+    print(chat_id, 'is NOT going to rate', work_id)
+
+    keyboard = set_keyboard_rate_work(work_id)
+    await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
+
+
 async def rate_digit(chat_id, work_id, msg_id, rate_string):
 
     if rate_string not in RATES:
@@ -608,8 +629,8 @@ async def rate_digit(chat_id, work_id, msg_id, rate_string):
     # change the inline-keyboard
     keyboard = {
         'inline_keyboard': [[
-            {'text': text, 'callback_data': f'CHANGE_RATE {work_id}'},
-            {'text': "smth else", 'callback_data': f'SMTH {work_id}'}
+            {'text': text, 'callback_data': f'{UNRATE} {work_id}'},
+            {'text': "Smth else", 'callback_data': f'SMTH {work_id}'}
         ]]
     }
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)

@@ -103,6 +103,7 @@ class DatabaseConnector:
             # finally:
             #     self.db_pool.putconn(conn)
 
+    # the manager of queries, sends the request to one of the functions
     @handle_database_errors
     async def db_query(self, sql, *params, method='fetchall'):
         if method == 'execute':
@@ -394,15 +395,24 @@ class FantInteractor(DatabaseInteractor):
 
     @handle_database_errors
     async def update_user_prefs(self, chat_id, work_id, pref, rate=None):
-        # if one rates the work
+        # if one rates the work, we update the previous record with like or dislike
         if rate:
-            sql = f"INSERT INTO {self.user_actions_table} (chat_id, w_id, action_type, rate) VALUES ($1, $2, $3, $4)"
+            sql = f"INSERT INTO {self.user_actions_table} (chat_id, w_id, action_type, rate) VALUES ($1, $2, $3, " \
+                  f"$4) ON CONFLICT (chat_id, w_id) DO UPDATE SET action_type = $3, rate = $4 WHERE " \
+                  f"({self.user_actions_table}.action_type = 'like' OR {self.user_actions_table}.action_type = " \
+                  f"'dislike') AND {self.user_actions_table}.rate IS NULL"
             await self.connector.db_query(sql, chat_id, work_id, pref, rate)
             return
 
         # if one reverts like or dislike
         if pref in ['unlike', 'undislike']:
             sql = f'DELETE from {self.user_actions_table} WHERE chat_id = $1 and w_id = $2'
+            await self.connector.db_query(sql, chat_id, work_id, method='execute')
+            return
+
+        # if one deletes the rate
+        if pref == 'unrate':
+            sql = f'DELETE from {self.user_actions_table} WHERE chat_id = $1 and w_id = $2 and rate IS NOT NULL'
             await self.connector.db_query(sql, chat_id, work_id, method='execute')
             return
 
