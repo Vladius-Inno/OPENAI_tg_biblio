@@ -170,7 +170,7 @@ async def handle_start(chat_id, msg, msg_id, result):
 
         # check if the new user came with referral link and get the number of referree
         if msg.startswith('/start '):
-            referree = msg.strip('/start ')
+            referree = int(msg.strip('/start '))
             print('We have got a referring user', referree)
             bonus_from_refer = await add_reffered_by(chat_id, referree)
             if bonus_from_refer:
