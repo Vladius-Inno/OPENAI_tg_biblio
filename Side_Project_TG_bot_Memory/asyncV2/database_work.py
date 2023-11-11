@@ -58,6 +58,7 @@ class DatabaseConnector:
         # self.db_pool = asyncio.run(self._create_db_pool())
         print('Setup complete')
 
+    @handle_database_errors
     async def _create_db_pool(self):
         self.db_pool = await asyncpg.create_pool(
             user=user_name, password=password,
@@ -68,6 +69,7 @@ class DatabaseConnector:
         print('Created the pool')
         # return db_pool
 
+    @handle_database_errors
     async def _close_db_pool(self):
         await self.db_pool.close()
         print("Pool closed")
@@ -82,7 +84,7 @@ class DatabaseConnector:
         async with conn.transaction():
             await conn.executemany(sql, *params)
 
-    # @handle_database_errors
+    @handle_database_errors
     async def query_db(self, conn, sql, *params, method='fetchall'):
         print(f"Got connection: {conn}")
         print('Pool acquired')
@@ -108,7 +110,7 @@ class DatabaseConnector:
         else:
             return await self.query_db(conn, sql, *params, method=method)
 
-    # @handle_database_errors
+    @handle_database_errors
     async def _get_user_connection(self, chat_id):
         element = UserDBConnection(self.db_pool, chat_id)
         print(type(element))
@@ -121,10 +123,12 @@ class UserDBConnection:
         self.chat_id = chat_id
         self.connection = None
 
+    @handle_database_errors
     async def __aenter__(self):
         self.connection = await self.db_pool.acquire()
         return self.connection
 
+    @handle_database_errors
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.db_pool.release(self.connection)
         self.connection = None
@@ -142,7 +146,6 @@ class OptionsInteractor(DatabaseInteractor):
         super().__init__(connector, table, test)
 
     @handle_database_errors
-
     async def check_role(self, conn, chat_id):
         # get the gpt_role
         sql = f"SELECT gpt_role FROM {self.table} WHERE chat_id = $1"
@@ -340,12 +343,6 @@ class FantInteractor(DatabaseInteractor):
 
     @handle_database_errors
     async def store_work(self, conn, work):
-        # check if the work is already in db
-        # sql = f"SELECT EXISTS (SELECT 1 FROM {self.table} WHERE w_id = $1)"
-        # result = await self.connector.db_query(sql, work.id, method='fetchone')
-        # if result and result[0]:
-        #     print('Book exists in DB')
-        #     return "Book exists in DB"
         if await self.work_in_db(conn, work):
             return False
         data_json = json.dumps(work.data)
@@ -368,9 +365,6 @@ class FantInteractor(DatabaseInteractor):
     @handle_database_errors
     async def update_work_genres(self, conn, work_id, genres: list):
         sql = f"INSERT INTO {self.work_genre_table} (w_id, genre_id, genre_weight, weight_voters) VALUES ($1, $2, $3, $4)"
-        # values_placeholder = ", ".join(["($1, $2, $3, $4)"] * len(genres))
-        # sql += values_placeholder
-        # genres = [val for record in genres for val in record]
         await self.connector.db_query(conn, sql, genres, method='executemany')
         return "ok"
 
@@ -402,7 +396,6 @@ class FantInteractor(DatabaseInteractor):
             sql = f'DELETE from {self.user_actions_table} WHERE chat_id = $1 and w_id = $2 and rate IS NOT NULL'
             await self.connector.db_query(conn, sql, chat_id, work_id, method='execute')
             return
-
 
         # if one is shown the work, likes or dislikes the work
         sql = f"INSERT INTO {self.user_actions_table} (chat_id, w_id, action_type) VALUES ($1, $2, $3" \
@@ -484,7 +477,6 @@ if __name__ == '__main__':
     # [book.show() for book in books]
 
     # work_id = 1800202
-
 
     # TODO make the func for that in main
     # work = fant_ext.get_work_db(work_id)
