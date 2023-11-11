@@ -132,7 +132,7 @@ class TelegramInt:
     async def get_updates(self, last_update):
         # Check for new messages in Telegram group
         # let's test if it works with offset +1
-        last_update = str(int(last_update) + 1)
+        last_update = str(int(last_update['last_update']) + 1)
         url = self.base_url + self.bot_token + f'/getUpdates?offset={last_update}'
         response = requests.get(url, timeout=20)
         response.raise_for_status()

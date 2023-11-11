@@ -1,4 +1,5 @@
 # version 0.0.1, working on news
+import json
 
 import requests
 import sys
@@ -45,14 +46,8 @@ api_connect = fantlab.FantlabApi()
 service = fantlab.BookDatabase(api_connect)
 
 
-async def handle_random_book(conn, chat_id):
-    # get the book from Fantlab
-    work = await service.get_random_work(image_on=False)
-    # send the book to TG
-    await telegram.send_work(work, chat_id, set_keyboard_rate_work(work.id))
-    # store the book in the DB
+async def store_book(conn, work, chat_id):
     stored = await fant_ext.store_work(conn, work)
-    await fant_ext.update_user_prefs(conn, chat_id, work.id, 'no_pref')
 
     if stored:
         # get the extended data to extract characteristics
@@ -71,6 +66,20 @@ async def handle_random_book(conn, chat_id):
             print(f"Updated the similars for {work.id}")
         else:
             print(f'No similars for {work.id}')
+
+
+async def handle_random_book(conn, chat_id):
+    # get the book from Fantlab
+    work = await service.get_random_work(image_on=False)
+
+    # send the book to TG
+    await telegram.send_work(work, chat_id, set_keyboard_rate_work(work.id))
+
+    # store the book in the DB
+    await store_book(conn, work, chat_id)
+
+    # update initial user prefs
+    await fant_ext.update_user_prefs(conn, chat_id, work.id, 'no_pref')
 
     return work.id, chat_id
 
@@ -245,7 +254,14 @@ async def subcribe_channel(chat_id):
     await telegram.send_text(message, chat_id, None, keyboard_subscribe)
 
 
-async def parse_updates(result, last_update):
+async def parse_updates(result, last_update_json):
+
+    last_update = last_update_json['last_update']
+    last_update_new = last_update_json
+
+    # if the next book must be loaded
+    # run_next = False
+
     if float(result['update_id']) > float(last_update):
         print('Start parsing', result['update_id'])
         print('Start parsing', result['update_id'])
@@ -255,16 +271,18 @@ async def parse_updates(result, last_update):
             if result['pre_checkout_query']:
                 try:
                     last_update = str(int(result['update_id']))
-                    write_update(last_update)
+                    last_update_new['last_update'] = last_update
+                    write_update(last_update_new)
                     await telegram.handle_pre_checkout_query(result)
                     print('Successful checkout')
                 except requests.exceptions.RequestException as e:
                     print('Couldnt handle the pre checkout')
                     last_update = str(int(result['update_id']))
-                    write_update(last_update)
+                    last_update_new['last_update'] = last_update
+                    write_update(last_update_new)
                     await telegram.send_text('Не удалось провести оплату. Пожалуйста, попробуйте ещё раз!',
                                              result['pre_checkout_query']['from']['id'])
-                return last_update
+                return
         except Exception as e:
             pass
 
@@ -273,8 +291,10 @@ async def parse_updates(result, last_update):
                 channel = result['channel_post']['sender_chat']['title']
                 print(f'We have got a channel post in {channel}')
                 last_update = str(int(result['update_id']))
-                write_update(last_update)
-                return last_update
+                last_update_new['last_update'] = last_update
+                write_update(last_update_new)
+
+                return
         except Exception as e:
             pass
 
@@ -283,30 +303,35 @@ async def parse_updates(result, last_update):
                 channel = result['edited_channel_post']['sender_chat']['title']
                 print(f'We have got a update to a channel post in {channel}')
                 last_update = str(int(result['update_id']))
-                write_update(last_update)
-                return last_update
+                last_update_new['last_update'] = last_update
+                write_update(last_update_new)
+
+                return
         except Exception as e:
             pass
 
         try:
             if result['callback_query']:
-                call_back_flag = True
                 print("HERE IN UPDATES")
+                # handle like, rates
+                run_next = await handle_callback_query(result['callback_query'])
                 last_update = str(int(result['update_id']))
-                write_update(last_update)
-                await handle_callback_query(result['callback_query'])
-                return last_update
+                last_update_new['extras'].update(run_next)
+                last_update_new['last_update'] = last_update
+                write_update(last_update_new)
+                return run_next
         except Exception as e:
-            call_back_flag = False
             print(e)
 
         try:
-        # Checking for new messages that did not come from chatGPT
+            # Checking for new messages that did not come from chatGPT
             if not result['message']['from']['is_bot']:
                 print('Correct message for', result['message']['chat']['type'])
                 # remember the last update number
                 last_update = str(int(result['update_id']))
-                write_update(last_update)
+                last_update_new['last_update'] = last_update
+                write_update(last_update_new)
+
                 chat_type = str(result['message']['chat']['type'])
                 # check if it's a group
                 if chat_type == 'supergroup':
@@ -319,7 +344,7 @@ async def parse_updates(result, last_update):
         except Exception as e:
             print(e)
 
-    return last_update
+    return
 
 
 async def handle_private(result):
@@ -506,17 +531,23 @@ async def handle_callback_query(callback_query):
 
     async with await connector._get_user_connection(chat_id) as conn:
 
+        # the flag to load the next book
+        run_next = {}
+
         if callback_data.split()[0] in CALLBACKS:
             print('Here comes the callback', callback_data)
             # transfer the chat_id, the work_id which is extracted from the callback, and the msg_id
             if callback_data.split()[0] == LIKE:
                 await like(conn, chat_id, int(callback_data.split()[1]), msg_id)
+                run_next = {str(chat_id): 'run_next'}
             if callback_data.split()[0] == DISLIKE:
                 await dislike(conn, chat_id, int(callback_data.split()[1]), msg_id)
+                run_next = {str(chat_id): 'run_next'}
             if callback_data.split()[0] == RATE:
                 await rate(conn, chat_id, callback_data.split()[1], msg_id)
             if callback_data.split()[0] in RATES:
                 await rate_digit(conn, chat_id, int(callback_data.split()[1]), msg_id, callback_data.split()[0])
+                run_next = {str(chat_id): 'run_next'}
             if callback_data.split()[0] == UNLIKE:
                 await unlike(conn, chat_id, int(callback_data.split()[1]), msg_id)
             if callback_data.split()[0] == UNDISLIKE:
@@ -526,7 +557,7 @@ async def handle_callback_query(callback_query):
             if callback_data.split()[0] == DONT_RATE:
                 await dont_rate(conn, chat_id, int(callback_data.split()[1]), msg_id)
 
-        return True
+        return run_next
 
 
 async def like(conn, chat_id, work_id, msg_id):
@@ -707,15 +738,22 @@ async def check_subscription_validity(conn, chat_id):
 def write_update(last_update):
     # Updating file with last update ID
     with open(FILENAME, 'w') as f:
-        f.write(last_update)
+        json.dump(last_update, f)
+        # f.write(last_update)
     return "done"
+
+
+def read_update():
+    with open(FILENAME, 'r') as f:
+        data = json.load(f)
+
+    return data
 
 
 async def ChatGPTbot():
     # read the last update id parsed
-    with open(FILENAME) as f:
-        last_update = f.read()
-    f.close()
+    last_update = read_update()
+
     print('The last update in the file:', last_update)
 
     # get updates for the bot from telegram
@@ -726,17 +764,36 @@ async def ChatGPTbot():
         result = []
         await telegram.send_text(f"Не смог получить апдейт от телеграма - {e}", '163905035')
 
+    # parse extras, if exists, there might be run_next code to run the next random book
+    if last_update['extras']:
+        extras = last_update['extras']
+        keys = list(extras.keys())
+        for key in keys:
+            if extras[key] == 'run_next':
+                print(f'{key} wants to run next')
+                last_update['extras'].pop(key)
+                write_update(last_update)
+                chat_id = int(key)
+                async with await connector._get_user_connection(chat_id) as conn:
+                    await handle_random_book(conn, chat_id)
+        return
+
     # new version of parsing updates with async.gather
+
     # create the list of function calls for each update
     parsers = [parse_updates(res, last_update) for res in result]
     # parallel parsing for each result, returns the new update id
-    await asyncio.gather(*parsers)
+    parsed_updates = await asyncio.gather(*parsers)
+    print('The result from updates is', parsed_updates)
+
+    return parsed_updates
 
 
 async def client_interactions_with_delay(client_interactions, delay=1):
     for interaction in client_interactions:
         await interaction
         await asyncio.sleep(delay)
+
 
 
 # new main with async
@@ -760,12 +817,12 @@ async def main():
         #     print('The problem in sleep', e)
 
 
-
 if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         # connector.close_connection()
+        connector._close_db_pool()
         print('Finished')
 
 # TODO Make bot send postponed messages
