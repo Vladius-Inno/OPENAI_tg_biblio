@@ -13,11 +13,11 @@ class Handler:
         self.subs_ext = subs_ext
         self.telegram_ext = telegram_ext
 
-    async def handle_clear_command(self, chat_id):
+    async def handle_clear_command(self, conn, chat_id):
         # Update the messages associated with the specified chat_id, so they are "cleared"
-        await self.mess_ext.clear_messages(chat_id)
+        await self.mess_ext.clear_messages(conn, chat_id)
 
-    async def handle_info_command(self, chat_id, validity, messages_left, free_messages_left, referral_bonus):
+    async def handle_info_command(self, conn, chat_id, validity, messages_left, free_messages_left, referral_bonus):
         subscription_status = 'Активна' if validity else 'Не активна'
         # Get the current date and time
         current_datetime = datetime.now()
@@ -40,7 +40,7 @@ class Handler:
             # # Retrieve the expiration date for the user
             # cursor_pay.execute("SELECT expiration_date FROM subscriptions WHERE chat_id = ?", (chat_id,))
             # result = cursor_pay.fetchone()[0]
-            result = await self.subs_ext.get_expiration_date(chat_id)
+            result = await self.subs_ext.get_expiration_date(conn, chat_id)
 
             expiration_date = datetime.strptime(result, '%Y-%m-%d').strftime('%d-%m-%Y')
             message = f'''
@@ -107,13 +107,9 @@ class Handler:
         #     print('Coulndt send the welcome message', e)
         await self.telegram_ext.send_text(message, chat_id, None, set_keyboard)
 
-    async def refer_command(self, chat_id):
+    async def refer_command(self, conn, chat_id):
         # Get a referral link from the database
-        # conn_pay = sqlite3.connect(SUBSCRIPTION_DATABASE)
-        # cursor_pay = conn_pay.cursor()
-        # cursor_pay.execute("SELECT referral_link FROM subscriptions WHERE chat_id = ?", (chat_id,))
-        # result = cursor_pay.fetchone()[0]
-        result = await self.subs_ext.get_referral(chat_id)
+        result = await self.subs_ext.get_referral(conn, chat_id)
         print('The referral link is', result)
 
         message = f'''
@@ -128,10 +124,11 @@ class Handler:
         await self.telegram_ext.send_text(message, chat_id)
 
     async def handle_recom_command(self, chat_id, markup):
-        # Initialize the Fantlab_api with the base URL
-        api_connect = fantlab.FantlabApi()
-        # Initialize Service A with the ServiceBClient
-        service = fantlab.BookDatabase(api_connect)
+        # TODO Is the commented section required?
+        # # Initialize the Fantlab_api with the base URL
+        # api_connect = fantlab.FantlabApi()
+        # # Initialize Service A with the ServiceBClient
+        # service = fantlab.BookDatabase(api_connect)
         message = f"Для точного подбора нужно знать о ваших предпочтениях"
         await self.telegram_ext.send_text(message, chat_id, None, markup)
 

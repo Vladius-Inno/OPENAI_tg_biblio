@@ -5,8 +5,8 @@ import fantlab
 import fantlab_page_find
 
 
-async def search_by_string(cursor, string):
-    result = await database_work.FantInteractor.multiple_search(cursor, string)
+async def search_by_string(cursor, string, chat_id=163905035):
+    result = await database_work.FantInteractor.multiple_search(chat_id, cursor, string)
     ids = set()
     # Print the results
     for characteristic, records in result:
@@ -37,6 +37,6 @@ if __name__ == "__main__":
     books = await fantlab_page_find.FantlabParser.parse_books(url, 5)
     fantlab.print_books(books)
 
-    fant_db.close_db_pool()
+    fant_db._close_db_pool()
 
 # TODO make different searches

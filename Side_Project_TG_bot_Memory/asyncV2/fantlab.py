@@ -367,9 +367,8 @@ async def relatives():
     print(datetime.datetime.now().isoformat())
 
 
-
-async def similars():
-    connector.db_pool = await connector._create_db_pool()
+async def similars(chat_id=163905035):
+    await connector._create_db_pool()
     #
     sql = f"SELECT w_id FROM works WHERE similars IS NULL"
     lis = await connector.query_db(sql)
@@ -380,15 +379,15 @@ async def similars():
     for idx in lis[index:]:
         similar_books = await service.get_similars(idx)
         if similar_books:
-            await fant_ext.update_similars(idx, similar_books)
+            await fant_ext.update_similars(chat_id, idx, similar_books)
             print(f"Updated the similars for {idx}")
         else:
             print(f'No similars for {idx}')
     print('Finished the script')
 
 
-async def checker():
-    connector.db_pool = await connector._create_db_pool()
+async def checker(chat_id=163905035):
+    await connector._create_db_pool()
     print(datetime.datetime.now().isoformat())
     # 3159 no genres
     # 4698 no work
@@ -398,13 +397,13 @@ async def checker():
             if work:
                 print(f"Got the work {idx} - {work.title}")
 
-                await fant_ext.store_work(work)
+                await fant_ext.store_work(chat_id, work)
                 work_ext = await service.get_extended_work(idx)
                 if work_ext:
                     print(f'Got extended work {idx}')
                     genres = work_ext.get_characteristics()
                     if genres:
-                        await fant_ext.update_work_genres(work_ext.id, genres)
+                        await fant_ext.update_work_genres(chat_id, work_ext.id, genres)
                         print(f'Genres for book {work_ext.id} updated')
                         print("+======================================")
                     else:
@@ -413,7 +412,7 @@ async def checker():
 
                 similar_books = await service.get_similars(idx)
                 if similar_books:
-                    await fant_ext.update_similars(idx, similar_books)
+                    await fant_ext.update_similars(chat_id, idx, similar_books)
                     print(f"Updated the similars for {idx}")
                 else:
                     print(f'No similars for {idx}')
