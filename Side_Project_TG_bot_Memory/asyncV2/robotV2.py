@@ -324,9 +324,14 @@ async def parse_updates(result, last_update):
 
 async def handle_private(result):
 
-    # handle the successful payment
-    if await handler.successful_payment_in_message(result):
-        return
+    chat_id = result['message']['chat']['id']
+    msg_id = str(int(result['message']['message_id']))
+
+    async with await connector._get_user_connection(chat_id) as conn:
+
+        # handle the successful payment
+        if await handler.successful_payment_in_message(conn, result):
+            return
 
     # try:
     #     if result['callback_query']:
@@ -335,10 +340,7 @@ async def handle_private(result):
     # except Exception as e:
     #     print(e)
 
-    chat_id = result['message']['chat']['id']
-    msg_id = str(int(result['message']['message_id']))
 
-    async with await connector._get_user_connection(chat_id) as conn:
 
         # check if we got the text, else skip
         if not await handler.text_in_message(result, chat_id, msg_id):

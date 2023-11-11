@@ -160,7 +160,7 @@ class OptionsInteractor(DatabaseInteractor):
     @handle_database_errors
     async def setup_role(self, conn, chat_id, role):
         sql = f"UPDATE {self.table} SET gpt_role = $1 WHERE chat_id = $2"
-        await self.connector.db_query(conn, chat_id, sql, role, chat_id, method='execute')
+        await self.connector.db_query(conn, sql, role, chat_id, method='execute')
 
     @handle_database_errors
     async def options_exist(self, conn, chat_id):

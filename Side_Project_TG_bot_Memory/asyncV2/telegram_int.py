@@ -263,7 +263,7 @@ class TelegramInt:
 
     @handle_telegram_errors
     @retry(attempts=3)
-    async def handle_successful_payment(self, update, subs_ext):
+    async def handle_successful_payment(self, conn, update, subs_ext):
         amount = str(int(update['successful_payment']['total_amount']) / 100)
         receipt_message = f"Спасибо за оплату!\n" \
                           f"Товар: {update['successful_payment']['invoice_payload']}\n" \
@@ -275,7 +275,7 @@ class TelegramInt:
 
         # # get the current status of the user
         current_subscription_status, current_start_date, current_expiration_date = await subs_ext.get_subscription(
-            chat_id)
+            conn, chat_id)
 
         # if the user doesn't have any subscription
         if current_subscription_status == 0:
@@ -286,5 +286,5 @@ class TelegramInt:
             subscription_start_date = datetime.strptime(current_start_date, '%Y-%m-%d')
             subscription_expiration_date = datetime.strptime(current_expiration_date, '%Y-%m-%d') + timedelta(days=31)
 
-        await subs_ext.update_subscription_status(chat_id, 1, subscription_start_date.strftime('%Y-%m-%d'),
+        await subs_ext.update_subscription_status(conn, chat_id, 1, subscription_start_date.strftime('%Y-%m-%d'),
                                                   subscription_expiration_date.strftime('%Y-%m-%d'))

@@ -148,11 +148,11 @@ class Handler:
         #     print('Coulndt send the help message', e)
         await self.telegram_ext.send_text(message, chat_id)
 
-    async def successful_payment_in_message(self, result):
+    async def successful_payment_in_message(self, conn, result):
         try:
             if result['message']['successful_payment']:
                 try:
-                    await self.telegram_ext.handle_successful_payment(result['message'], self.subs_ext)
+                    await self.telegram_ext.handle_successful_payment(conn, result['message'], self.subs_ext)
                     print('Successful payment')
                     # last_update = str(int(result['update_id']))
                 except requests.exceptions.RequestException as e:
