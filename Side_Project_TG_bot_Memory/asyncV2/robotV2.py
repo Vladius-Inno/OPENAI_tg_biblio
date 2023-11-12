@@ -10,6 +10,7 @@ from datetime import datetime
 import fantlab, database_work, handlers, telegram_int
 from OpenAI import openAI
 from group_handle import handle_supergroup
+from fant_random_simple import random_parsed
 
 from constants import BOT_TOKEN, BOT_NAME, FILENAME, RATE_1, RATE_2, RATE_3, RATE_4, RATE_5, RATE_6, RATE_7, RATE_8, \
     RATE_9, RATE_10, DONT_RATE,  RATES, UNLIKE, UNDISLIKE, UNRATE, \
@@ -70,7 +71,10 @@ async def store_book(conn, work, chat_id):
 
 async def handle_random_book(conn, chat_id):
     # get the book from Fantlab
-    work = await service.get_random_work(image_on=False)
+    # work = await service.get_random_work(image_on=False)
+
+    random_work = random_parsed()
+    work = await service.get_work(random_work)
 
     # send the book to TG
     await telegram.send_work(work, chat_id, set_keyboard_rate_work(work.id))
