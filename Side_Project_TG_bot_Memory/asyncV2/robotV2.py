@@ -758,71 +758,45 @@ def read_update():
     return data
 
 
-async def ChatGPTbot():
-    # read the last update id parsed
-    last_update = read_update()
-
-    print('The last update in the file:', last_update)
-
-    # get updates for the bot from telegram
-    try:
-        result = await telegram.get_updates(last_update)
-    except requests.exceptions.RequestException as e:
-        print("Didn't get the update from TG", e)
-        result = []
-        await telegram.send_text(f"Не смог получить апдейт от телеграма - {e}", '163905035')
-
-    # parse extras, if exists, there might be run_next code to run the next random book
-    if last_update['extras']:
-        extras = last_update['extras']
-        keys = list(extras.keys())
-        for key in keys:
-            if extras[key] == 'run_next':
-                print(f'{key} wants to run next')
-                last_update['extras'].pop(key)
-                write_update(last_update)
-                chat_id = int(key)
-                async with await connector._get_user_connection(chat_id) as conn:
-                    await handle_random_book(conn, chat_id)
-        return
-
-    # new version of parsing updates with async.gather
-
-    # create the list of function calls for each update
-    parsers = [parse_updates(res, last_update) for res in result]
-    # parallel parsing for each result, returns the new update id
-    parsed_updates = await asyncio.gather(*parsers)
-    print('The result from updates is', parsed_updates)
-
-    return parsed_updates
-
-
-async def client_interactions_with_delay(client_interactions, delay=1):
-    for interaction in client_interactions:
-        await interaction
-        await asyncio.sleep(delay)
-
-
-
-# new main with async
+# new main with async create tasks
 async def main():
     await connector._create_db_pool()
     while True:
-        # connector.db_pool = await connector._create_db_pool()
-
-        client_interactions = [ChatGPTbot() for _ in range(5)]
-        # client_interactions = [client_interactions_with_delay(ChatGPTbot(), 5) for _ in range(5)]
         try:
-            await client_interactions_with_delay(client_interactions, delay=5)
-            # await asyncio.gather(*client_interactions)
+            # read the last update id parsed from the file
+            last_update = read_update()
+            print('The last update in the file:', last_update)
+
+            # get updates for the bot from telegram
+            try:
+                result = await telegram.get_updates(last_update)
+            except requests.exceptions.RequestException as e:
+                print("Didn't get the update from TG", e)
+                result = []
+                await telegram.send_text(f"Не смог получить апдейт от телеграма - {e}", '163905035')
+
+            # parse extras, if exists, there might be run_next code to run the next random book
+            if last_update['extras']:
+                extras = last_update['extras']
+                keys = list(extras.keys())
+                for key in keys:
+                    if extras[key] == 'run_next':
+                        print(f'{key} wants to run next')
+                        last_update['extras'].pop(key)
+                        write_update(last_update)
+                        chat_id = int(key)
+                        async with await connector._get_user_connection(chat_id) as conn:
+                            asyncio.create_task(handle_random_book(conn, chat_id))
+                return
+
+            # iterate on the list of updates
+            for res in result:
+                asyncio.create_task(parse_updates(res, last_update))
+
+            await asyncio.sleep(5)
+
         except TypeError as e:
             print('Typeerror', e)
-        # finally:
-        #     await connector._close_db_pool()
-        # try:
-        #     await asyncio.sleep(5)
-        # except TypeError as e:
-        #     print('The problem in sleep', e)
 
 
 if __name__ == '__main__':
@@ -830,7 +804,7 @@ if __name__ == '__main__':
         asyncio.run(main())
     except KeyboardInterrupt:
         # connector.close_connection()
-        connector._close_db_pool()
+        await connector._close_db_pool()
         print('Finished')
 
 # TODO Make bot send postponed messages
