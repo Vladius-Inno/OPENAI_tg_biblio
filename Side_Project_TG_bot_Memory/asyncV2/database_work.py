@@ -49,14 +49,13 @@ class DatabaseConnector:
         self.db_pool = None
         self.database = database+"_test" if test else database
         self._setup()
-        print(f'Setup of connection to {self.database} created')
 
     def _setup(self):
         self.tables = [SUBSCRIPTION_DATABASE, MESSAGES_DATABASE, OPTIONS_DATABASE]
         if self.test:
             self.tables = [element.strip('.db') + '_test' for element in self.tables]
         # self.db_pool = asyncio.run(self._create_db_pool())
-        print('Setup complete')
+        print(f'Setup of {self.database} created')
 
     @handle_database_errors
     async def _create_db_pool(self):
@@ -86,8 +85,6 @@ class DatabaseConnector:
 
     @handle_database_errors
     async def query_db(self, conn, sql, *params, method='fetchall'):
-        print(f"Got connection: {conn}")
-        print('Pool acquired')
         print(sql, params)
         result = await conn.fetch(sql, *params)
         print('Fetched')
@@ -113,7 +110,6 @@ class DatabaseConnector:
     @handle_database_errors
     async def _get_user_connection(self, chat_id):
         element = UserDBConnection(self.db_pool, chat_id)
-        print(type(element))
         return element
 
 
@@ -357,7 +353,7 @@ class FantInteractor(DatabaseInteractor):
         result = await self.connector.db_query(conn, sql, work_id, method='fetchone')
         if result:
             data_json = result[0]
-            print(data_json)
+            # print(data_json)
         else:
             return None
         return fantlab.Work(data_json)
