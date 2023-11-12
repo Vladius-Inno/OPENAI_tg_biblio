@@ -48,6 +48,8 @@ service = fantlab.BookDatabase(api_connect)
 
 
 async def store_book(conn, work, chat_id):
+
+    # async with await connector._get_user_connection(chat_id) as conn:
     stored = await fant_ext.store_work(conn, work)
 
     if stored:
@@ -68,26 +70,28 @@ async def store_book(conn, work, chat_id):
         else:
             print(f'No similars for {work.id}')
 
-
-async def handle_random_book(conn, chat_id):
-
-    # use simple parse fantlab page to get a work id
-    random_work_id = await random_parsed()
-    # get the work by this id
-    if random_work_id:
-        work = await service.get_work(random_work_id)
-    else:
-        # get the book from Fantlab the hard way via retrying the api (though here we filter as we want)
-        work = await service.get_random_work(image_on=False)
-
-    # send the book to TG
-    await telegram.send_work(work, chat_id, set_keyboard_rate_work(work.id))
-
-    # store the book in the DB
-    await store_book(conn, work, chat_id)
-
     # update initial user prefs
     await fant_ext.update_user_prefs(conn, chat_id, work.id, 'no_pref')
+
+
+async def handle_random_book(chat_id):
+    async with await connector._get_user_connection(chat_id) as conn:
+
+        # use simple parse fantlab page to get a work id
+        random_work_id = await random_parsed()
+        # get the work by this id
+        if random_work_id:
+            work = await service.get_work(random_work_id)
+        else:
+            # get the book from Fantlab the hard way via retrying the api (though here we filter as we want)
+            work = await service.get_random_work(image_on=False)
+
+        # send the book to TG
+        await telegram.send_work(work, chat_id, set_keyboard_rate_work(work.id))
+
+        # store the book in the DB
+        # asyncio.create_task(store_book(work, chat_id))
+        await store_book(conn, work, chat_id)
 
     return work.id, chat_id
 
@@ -485,7 +489,7 @@ async def handle_private(result):
                 # run the correspondent function handler
                 if inline_command:
                     # call the corresponding func
-                    await INLINE_COMMANDS[inline_command](conn, chat_id)
+                    await INLINE_COMMANDS[inline_command](chat_id)
                     return
 
                 if messages_left <= 0:
@@ -785,9 +789,7 @@ async def main():
                         last_update['extras'].pop(key)
                         write_update(last_update)
                         chat_id = int(key)
-                        async with await connector._get_user_connection(chat_id) as conn:
-                            asyncio.create_task(handle_random_book(conn, chat_id))
-                return
+                        asyncio.create_task(handle_random_book(chat_id))
 
             # iterate on the list of updates
             for res in result:
@@ -798,13 +800,15 @@ async def main():
         except TypeError as e:
             print('Typeerror', e)
 
+    # finally:
+    #     # connector.close_connection()
+    #     await connector._close_db_pool()
+
 
 if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        # connector.close_connection()
-        await connector._close_db_pool()
         print('Finished')
 
 # TODO Make bot send postponed messages

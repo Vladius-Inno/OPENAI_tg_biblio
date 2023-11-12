@@ -63,7 +63,7 @@ class DatabaseConnector:
             user=user_name, password=password,
             host=host_name, database=self.database,
             min_size=5,  # Minimum number of connections
-            max_size=10  # Maximum number of connections
+            max_size=50  # Maximum number of connections
         )
         print('Created the pool')
         # return db_pool
@@ -86,6 +86,7 @@ class DatabaseConnector:
     @handle_database_errors
     async def query_db(self, conn, sql, *params, method='fetchall'):
         print(sql, params)
+        print(conn)
         result = await conn.fetch(sql, *params)
         print('Fetched')
         if method == 'fetchall':
@@ -328,9 +329,10 @@ class FantInteractor(DatabaseInteractor):
         # if str(type(work)) == "<class '__main__.Work'>":
         #     print('is an instance')
             work = work.id
+            print(f'Checking if {work} in DB')
         except Exception as e:
-            pass
-        sql = f"SELECT EXISTS (SELECT 1 FROM {self.table} WHERE w_id = $1)"
+            print('Problem with work id')
+        sql = f"SELECT 1 FROM {self.table} WHERE w_id = $1 LIMIT 1"
         result = await self.connector.db_query(conn, sql, work, method='fetchone')
         if result and result[0]:
             print('Book exists in DB')
