@@ -2,16 +2,18 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import random
+from retrying_async import retry
 
 
-def random_parsed():
+@retry(attempts=3)
+async def random_parsed():
 
     urls = ['https://www.fantlab.ru/compare',
             'https://fantlab.ru/ratings',
             'https://fantlab.ru/news',
             'https://fantlab.ru/bygenre',
             'https://fantlab.ru/pubnews',
-            'https://www.fantlab.ru']
+            'https://fantlab.ru']
 
     url = random.choice(urls)
 
@@ -27,36 +29,40 @@ def random_parsed():
     params = {
         'images': 0,
     }
+    try:
+        # Make a GET request to the website with headers and parameters
+        response = requests.get(url, headers=headers, params=params)
 
-    # Make a GET request to the website with headers and parameters
-    response = requests.get(url, headers=headers, params=params)
+        # Check if the request was successful (status code 200)
+        if response.status_code == 200:
+            # Parse the HTML content
+            soup = BeautifulSoup(response.text, 'html.parser')
 
-    # Check if the request was successful (status code 200)
-    if response.status_code == 200:
-        # Parse the HTML content
-        soup = BeautifulSoup(response.text, 'html.parser')
+            # Find the specific section containing the random work information
+            work_info_div = soup.find('div', {'id': 'wg-randomwork'})
 
-        # Find the specific section containing the random work information
-        work_info_div = soup.find('div', {'id': 'wg-randomwork'})
+            # Check if the work_info_div is found
+            if work_info_div:
+                # Extract the work number from the href attribute
+                link_tag = work_info_div.find('b').find('a')
+                if link_tag:
+                    href_value = link_tag.get('href')
+                    work_number_match = re.search(r'/work(\d+)', href_value)
 
-        # Check if the work_info_div is found
-        if work_info_div:
-            # Extract the work number from the href attribute
-            link_tag = work_info_div.find('b').find('a')
-            if link_tag:
-                href_value = link_tag.get('href')
-                work_number_match = re.search(r'/work(\d+)', href_value)
+                    if work_number_match:
+                        work_number = work_number_match.group(1)
+                        print(f"The work number is: {work_number}")
+                        return work_number
 
-                if work_number_match:
-                    work_number = work_number_match.group(1)
-                    print(f"The work number is: {work_number}")
+                    else:
+                        raise ValueError("Work number not found on the page")
                 else:
-                    print("Work number not found in the link.")
+                    raise ValueError("Link tag not found in the 'wg-randomwork' section.")
             else:
-                print("Link tag not found in the 'wg-randomwork' section.")
+                raise ValueError("Specific section 'wg-randomwork' not found on the page.")
         else:
-            print("Specific section 'wg-randomwork' not found on the page.")
-    else:
-        print(f"Failed to retrieve the page. Status code: {response.status_code}")
+            raise requests.RequestException(f"Error: {response.status_code}")
 
-    return work_number
+    except Exception as e:
+        print('Simple parse for fantlab random work failed')
+        return None

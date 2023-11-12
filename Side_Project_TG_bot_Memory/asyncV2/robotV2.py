@@ -70,11 +70,15 @@ async def store_book(conn, work, chat_id):
 
 
 async def handle_random_book(conn, chat_id):
-    # get the book from Fantlab
-    # work = await service.get_random_work(image_on=False)
 
-    random_work = random_parsed()
-    work = await service.get_work(random_work)
+    # use simple parse fantlab page to get a work id
+    random_work_id = await random_parsed()
+    # get the work by this id
+    if random_work_id:
+        work = await service.get_work(random_work_id)
+    else:
+        # get the book from Fantlab the hard way via retrying the api (though here we filter as we want)
+        work = await service.get_random_work(image_on=False)
 
     # send the book to TG
     await telegram.send_work(work, chat_id, set_keyboard_rate_work(work.id))
