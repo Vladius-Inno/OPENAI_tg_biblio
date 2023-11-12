@@ -63,7 +63,7 @@ async def store_book(conn, work, chat_id):
         # get the similar books
         similar_books = await service.get_similars(work.id)
         if similar_books:
-            await fant_ext.update_similars(conn, chat_id, work.id, similar_books)
+            await fant_ext.update_similars(conn, work.id, similar_books)
             print(f"Updated the similars for {work.id}")
         else:
             print(f'No similars for {work.id}')
