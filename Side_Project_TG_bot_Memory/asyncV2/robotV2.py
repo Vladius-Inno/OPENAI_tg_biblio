@@ -11,6 +11,8 @@ import fantlab, database_work, handlers, telegram_int
 from OpenAI import openAI
 from group_handle import handle_supergroup
 from fant_random_simple import random_parsed
+import cached_funcs
+
 
 from constants import BOT_TOKEN, BOT_NAME, FILENAME, RATE_1, RATE_2, RATE_3, RATE_4, RATE_5, RATE_6, RATE_7, RATE_8, \
     RATE_9, RATE_10, DONT_RATE,  RATES, UNLIKE, UNDISLIKE, UNRATE, \
@@ -233,6 +235,8 @@ async def check_message_limit(conn, chat_id, limit, subscription_status):
     start_of_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     start_of_day_timestamp = start_of_day.timestamp()
     # Retrieve the message count for the current chat_id from the database
+
+    # TODO - merge to a single query
     message_count = await mess_ext.check_message_limit(conn, chat_id, subscription_status, start_of_day_timestamp)
     if message_count > limit:
         message_count = limit
@@ -370,15 +374,7 @@ async def handle_private(result):
         if await handler.successful_payment_in_message(conn, result):
             return
 
-    # try:
-    #     if result['callback_query']:
-    #         print('Got a callback')
-    #         handle_callback_query(result['callback_query'])
-    # except Exception as e:
-    #     print(e)
-
-
-
+        # TODO if photo is sent, use only caption
         # check if we got the text, else skip
         if not await handler.text_in_message(result, chat_id, msg_id):
             return
@@ -386,12 +382,14 @@ async def handle_private(result):
         msg = result['message']['text']
         print(chat_id, msg_id, msg)
 
+        # cached
         # a new user
-        if not await subs_ext.user_exists(conn, chat_id):
+        if not await cached_funcs.user_exists(subs_ext, conn, chat_id, 'user_exists'):
             await add_new_user(chat_id)
 
+        # cached
         # set options for a new user or in case of options failure
-        if not await opt_ext.options_exist(conn, chat_id):
+        if not await cached_funcs.options_exist(opt_ext, conn, chat_id, 'options_exist'):
             await opt_ext.set_user_option(conn, chat_id)
 
         # Command detection starts
@@ -440,6 +438,7 @@ async def handle_private(result):
             return
         # Command detection ends for most commands
 
+        # cached
         # get the validity, get_subscription = subscription_status, start_date_text, expiration_date_text, then update
         is_subscription_valid = await check_subscription_validity(conn, chat_id)
         if is_subscription_valid:
@@ -447,6 +446,7 @@ async def handle_private(result):
         else:
             limit = DAY_LIMIT_PRIVATE
 
+        # TODO - in check_message_limit merge the queries
         # get_free_messages = free_messages, check_message_count = message_count
         validity, messages_left, free_messages_left = await check_message_limit(conn, chat_id, limit, is_subscription_valid)
         print(f"Subscription for {chat_id} is valid: {is_subscription_valid}, messages left {messages_left}, "
@@ -465,8 +465,9 @@ async def handle_private(result):
                                          '163905035')
                 return
 
+        # cached
         try:
-            channel_subscribed = await telegram.user_subscribed(chat_id, CHANNEL_NAME)
+            channel_subscribed = await cached_funcs.user_subscribed(telegram, chat_id, CHANNEL_NAME, 'user_subscribed')
         except requests.exceptions.RequestException as e:
             print("Couldn't check the channel subscription")
             channel_subscribed = False
@@ -512,6 +513,7 @@ async def handle_private(result):
                 except requests.exceptions.RequestException as e:
                     print('Couldnt set the typing status', e)
 
+                # TODO - 5 to cache dynamically
                 gpt_role = await opt_ext.check_role(conn, chat_id)
                 try:
                     bot_response = await openAI(f"{prompt}", MAX_TOKENS, messages, gpt_role)
@@ -730,7 +732,9 @@ async def add_reffered_by(conn, chat_id, referree):
 # TODO combine with other requests
 async def check_subscription_validity(conn, chat_id):
     # # Get the subscription status, start date, and expiration date for the user
-    result = await subs_ext.get_subscription(conn, chat_id)
+
+    # cached
+    result = await cached_funcs.get_subscription(subs_ext, conn, chat_id, 'get_subscription')
     if result is not None:
         subscription_status, start_date_text, expiration_date_text = result
         if subscription_status == 1:
