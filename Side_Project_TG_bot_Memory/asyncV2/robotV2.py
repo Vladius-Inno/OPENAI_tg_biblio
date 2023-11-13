@@ -30,15 +30,17 @@ if sys.stderr.encoding != 'utf-8':
     sys.stderr = open(sys.stderr.fileno(), mode='w', encoding='utf-8', buffering=1)
 
 # new connectors
-connector = database_work.DatabaseConnector('fantlab')
+connector = database_work.DatabaseConnector('fantlab', test=TEST)
 
-# extractors for the database tables
-mess_ext = database_work.MessagesInteractor(connector, test=TEST)
-opt_ext = database_work.OptionsInteractor(connector, test=TEST)
-subs_ext = database_work.SubscriptionsInteractor(connector, test=TEST)
+# interactor for the database tables
+
+db_int = database_work.DatabaseInteractor(connector)
+# mess_ext = database_work.MessagesInteractor(connector, test=TEST)
+# opt_ext = database_work.OptionsInteractor(connector, test=TEST)
+# subs_ext = database_work.SubscriptionsInteractor(connector, test=TEST)
 
 telegram = telegram_int.TelegramInt(BOT_TOKEN)
-handler = handlers.Handler(mess_ext, opt_ext, subs_ext, telegram)
+handler = handlers.Handler(db_int, telegram)
 
 # Interactor with the fantlab database, main class for requests
 fant_ext = database_work.FantInteractor(connector)
@@ -119,7 +121,7 @@ INLINE_COMMANDS = {RECOMMEND_COMMAND: handle_recomendation,
 
 async def set_keyboard_roles(conn, chat_id):
     # get the gpt_role
-    gpt_role = await opt_ext.check_role(conn, chat_id)
+    gpt_role = await db_int.check_role(conn, chat_id)
     role_position = ROLES.index(gpt_role)
     # print('role positions', role_position)
     role_array = [1 if x == role_position else 0 for x in range(len(ROLES))]
@@ -177,7 +179,7 @@ keyboard_recom_markup = {
 
 async def setup_role(conn, chat_id, role, silent=False):
     # Add a gpt_role into the database with options extractor
-    await opt_ext.setup_role(conn, chat_id, role)
+    await db_int.setup_role(conn, chat_id, role)
     print(f'Role {role} for {chat_id} is set')
     role_rus = ROLES_ZIP[role]
     if not silent:
@@ -199,7 +201,7 @@ async def handle_start(conn, chat_id, msg, msg_id, result):
             print('We have got a referring user', referree)
             bonus_from_refer = await add_reffered_by(conn, chat_id, referree)
             if bonus_from_refer:
-                await subs_ext.add_referral_bonus(conn, referree, REFERRAL_BONUS)
+                await db_int.add_referral_bonus(conn, referree, REFERRAL_BONUS)
             return
         return
     except Exception as e:
@@ -213,13 +215,13 @@ async def add_private_message_to_db(conn, chat_id, text, role, subscription_stat
     # Here, we'll store the message in the database
     timestamp = int(time.time())
     subscription_status = 1 if subscription_status else 0
-    await mess_ext.insert_message(conn, chat_id, text, role, subscription_status, timestamp)
+    await db_int.insert_message(conn, chat_id, text, role, subscription_status, timestamp)
 
 
 async def get_last_messages(conn, chat_id, amount):
     # Retrieve the last messages from the database
 
-    rows = await mess_ext.get_last_messages(conn, chat_id, amount)
+    rows = await db_int.get_last_messages(conn, chat_id, amount)
     reversed_rows = reversed(rows)  # Reverse the order of the rows
     messages = []
     for row in reversed_rows:
@@ -237,11 +239,12 @@ async def check_message_limit(conn, chat_id, limit, subscription_status):
     # Retrieve the message count for the current chat_id from the database
 
     # TODO - merge to a single query
-    message_count = await mess_ext.check_message_limit(conn, chat_id, subscription_status, start_of_day_timestamp)
+    # the amount of messages a user had today
+    message_count = await db_int.check_message_limit(conn, chat_id, subscription_status, start_of_day_timestamp)
     if message_count > limit:
         message_count = limit
     # get the bonus free messages if exist
-    free_message_count = await subs_ext.get_free_messages(conn, chat_id)
+    free_message_count = await db_int.get_free_messages(conn, chat_id)
 
     # print(f"Today {chat_id} had {message_count} messages")
     # Check if the message limit has been reached
@@ -384,13 +387,13 @@ async def handle_private(result):
 
         # cached
         # a new user
-        if not await cached_funcs.user_exists(subs_ext, conn, chat_id, 'user_exists'):
+        if not await cached_funcs.user_exists(db_int, conn, chat_id, 'user_exists'):
             await add_new_user(chat_id)
 
         # cached
         # set options for a new user or in case of options failure
-        if not await cached_funcs.options_exist(opt_ext, conn, chat_id, 'options_exist'):
-            await opt_ext.set_user_option(conn, chat_id)
+        if not await cached_funcs.options_exist(db_int, conn, chat_id, 'options_exist'):
+            await db_int.set_user_option(conn, chat_id)
 
         # Command detection starts
         if START_COMMAND in msg:
@@ -495,7 +498,7 @@ async def handle_private(result):
 
                 if messages_left <= 0:
                     print('Need to decrease the free messages')
-                    await subs_ext.decrease_free_messages(conn, chat_id, 1)
+                    await db_int.decrease_free_messages(conn, chat_id, 1)
 
                 # get the last n messages from the db to feed them to the gpt
                 messages = await get_last_messages(conn, chat_id, CONTEXT_DEPTH)
@@ -514,7 +517,7 @@ async def handle_private(result):
                     print('Couldnt set the typing status', e)
 
                 # TODO - 5 to cache dynamically
-                gpt_role = await opt_ext.check_role(conn, chat_id)
+                gpt_role = await db_int.check_role(conn, chat_id)
                 try:
                     bot_response = await openAI(f"{prompt}", MAX_TOKENS, messages, gpt_role)
                     await add_private_message_to_db(conn, chat_id, bot_response, 'assistant', is_subscription_valid)
@@ -702,7 +705,7 @@ async def add_new_user(user_id):
     revealed_date = datetime.now().strftime('%Y-%m-%d')
     referral_link = f'https://t.me/{BOT_NAME}?start={user_id}'
     # # Add a new user with default subscription status, start date, and expiration date
-    await subs_ext.add_new_user(user_id, revealed_date, referral_link)
+    await db_int.add_new_user(user_id, revealed_date, referral_link)
 
     # TODO check if new users are ok with roles
     # conn_opt = sqlite3.connect(OPTIONS_DATABASE)
@@ -715,12 +718,12 @@ async def add_new_user(user_id):
 
 
 async def add_reffered_by(conn, chat_id, referree):
-    result = await subs_ext.referred_by(conn, chat_id)
+    result = await db_int.referred_by(conn, chat_id)
     refer_exist = True if result else False
     print('The previous referral link is', result)
     if not refer_exist:
         # Add to a newly added user the referree id
-        await subs_ext.add_referree(conn, referree, chat_id)
+        await db_int.add_referree(conn, referree, chat_id)
         await telegram.send_text(f'Поздравляем! Пользователь {chat_id} присоединился к боту {BOT_NAME} по '
                                  f'вашей реферальной ссылке', referree)
         return True
@@ -734,7 +737,7 @@ async def check_subscription_validity(conn, chat_id):
     # # Get the subscription status, start date, and expiration date for the user
 
     # cached
-    result = await cached_funcs.get_subscription(subs_ext, conn, chat_id, 'get_subscription')
+    result = await cached_funcs.get_subscription(db_int, conn, chat_id, 'get_subscription')
     if result is not None:
         subscription_status, start_date_text, expiration_date_text = result
         if subscription_status == 1:
@@ -746,7 +749,7 @@ async def check_subscription_validity(conn, chat_id):
                 return True
             # the date is expired, fill in the old dates but change the status
             else:
-                await subs_ext.update_subscription_status(conn, chat_id, 0, start_date_text, expiration_date_text)
+                await db_int.update_subscription_status(conn, chat_id, 0, start_date_text, expiration_date_text)
                 return False
     return False
 

@@ -47,11 +47,11 @@ class DatabaseConnector:
         self.tables = []
         # self.connection = None
         self.db_pool = None
-        self.database = database+"_test" if test else database
+        self.database = database
         self._setup()
 
     def _setup(self):
-        self.tables = [SUBSCRIPTION_DATABASE, MESSAGES_DATABASE, OPTIONS_DATABASE]
+        self.tables = [OPTIONS_DATABASE, MESSAGES_DATABASE, SUBSCRIPTION_DATABASE]
         if self.test:
             self.tables = [element.strip('.db') + '_test' for element in self.tables]
         # self.db_pool = asyncio.run(self._create_db_pool())
@@ -132,20 +132,20 @@ class UserDBConnection:
 
 
 class DatabaseInteractor:
-    def __init__(self, connector, table=None, test=False):
-        self.table = table.strip('.db') + '_test' if test else table.strip('.db') if table else None
-        self.test = test
+    def __init__(self, connector):
+        # self.table = table.strip('.db') + '_test' if test else table.strip('.db') if table else None
+        self.tables = connector.tables
+        # self.test = test
         self.connector = connector
 
-
-class OptionsInteractor(DatabaseInteractor):
-    def __init__(self, connector, table='options', test=False):
-        super().__init__(connector, table, test)
+# class OptionsInteractor(DatabaseInteractor):
+#     def __init__(self, connector, table='options', test=False):
+#         super().__init__(connector, table, test)
 
     @handle_database_errors
     async def check_role(self, conn, chat_id):
         # get the gpt_role
-        sql = f"SELECT gpt_role FROM {self.table} WHERE chat_id = $1"
+        sql = f"SELECT gpt_role FROM {self.tables[0]} WHERE chat_id = $1"
         try:
             gpt_role = await self.connector.db_query(conn, sql, chat_id, method='fetchone')
             gpt_role = gpt_role.get('gpt_role')
@@ -156,13 +156,13 @@ class OptionsInteractor(DatabaseInteractor):
 
     @handle_database_errors
     async def setup_role(self, conn, chat_id, role):
-        sql = f"UPDATE {self.table} SET gpt_role = $1 WHERE chat_id = $2"
+        sql = f"UPDATE {self.tables[0]} SET gpt_role = $1 WHERE chat_id = $2"
         await self.connector.db_query(conn, sql, role, chat_id, method='execute')
 
     @handle_database_errors
     async def options_exist(self, conn, chat_id):
         # Execute a query to retrieve the user by chat_id
-        sql = f'SELECT * FROM {self.table} WHERE chat_id = $1'
+        sql = f'SELECT * FROM {self.tables[0]} WHERE chat_id = $1'
         if await self.connector.db_query(conn, sql, chat_id, method='fetchone'):
             return True
         return False
@@ -170,23 +170,22 @@ class OptionsInteractor(DatabaseInteractor):
     @handle_database_errors
     async def set_user_option(self, conn, chat_id):
         # Add a new user option record
-        sql = f"INSERT INTO {self.table} (chat_id, gpt_role) VALUES ($1, $2)"
+        sql = f"INSERT INTO {self.tables[0]} (chat_id, gpt_role) VALUES ($1, $2)"
         await self.connector.db_query(conn, sql, chat_id, DEFAULT_ROLE, method='execute')
 
-
-class MessagesInteractor(DatabaseInteractor):
-    def __init__(self, connector, table=MESSAGES_DATABASE, test=False):
-        super().__init__(connector, table, test)
+# class MessagesInteractor(DatabaseInteractor):
+#     def __init__(self, connector, table=MESSAGES_DATABASE, test=False):
+#         super().__init__(connector, table, test)
 
     @handle_database_errors
     async def insert_message(self, conn, chat_id, text, role, subscription_status, timestamp):
-        sql = f"INSERT INTO {self.table} (timestamp, chat_id, role, message, subscription_status) VALUES ($1, $2, $3, " \
+        sql = f"INSERT INTO {self.tables[1]} (timestamp, chat_id, role, message, subscription_status) VALUES ($1, $2, $3, " \
               f"$4, $5) "
         await self.connector.db_query(conn, sql, timestamp, chat_id, role, text, subscription_status, method='execute')
 
     @handle_database_errors
     async def get_last_messages(self, conn, chat_id, amount):
-        sql = f"SELECT chat_id, role, message FROM {self.table} WHERE chat_id = $1 AND CLEARED = 0 ORDER BY timestamp " \
+        sql = f"SELECT chat_id, role, message FROM {self.tables[1]} WHERE chat_id = $1 AND CLEARED = 0 ORDER BY timestamp " \
               f"DESC LIMIT {amount} "
         result = await self.connector.db_query(conn, sql, chat_id, method='fetchall')
         return [(message['chat_id'], message['role'], message['message']) for message in result]
@@ -194,7 +193,7 @@ class MessagesInteractor(DatabaseInteractor):
     # TODO check if it returns the integer
     @handle_database_errors
     async def check_message_limit(self, conn, chat_id, subscription_status, start_of_day_timestamp):
-        sql = f'SELECT COUNT(*) FROM {self.table} WHERE chat_id = $1 AND role = $2 AND subscription_status = $3 AND ' \
+        sql = f'SELECT COUNT(*) FROM {self.tables[1]} WHERE chat_id = $1 AND role = $2 AND subscription_status = $3 AND ' \
               f'timestamp > $4 '
         res = await self.connector.db_query(conn, sql, chat_id, 'user', subscription_status, start_of_day_timestamp,
                                             method='fetchone')
@@ -202,45 +201,44 @@ class MessagesInteractor(DatabaseInteractor):
 
     @handle_database_errors
     async def clear_messages(self, conn, chat_id):
-        sql = f'UPDATE {self.table} SET cleared = 1 WHERE chat_id = $1'
+        sql = f'UPDATE {self.tables[1]} SET cleared = 1 WHERE chat_id = $1'
         await self.connector.db_query(conn, sql, chat_id, method='execute')
 
-
-class SubscriptionsInteractor(DatabaseInteractor):
-    def __init__(self, connector, table=SUBSCRIPTION_DATABASE, test=False):
-        super().__init__(connector, table, test)
+# class SubscriptionsInteractor(DatabaseInteractor):
+#     def __init__(self, connector, table=SUBSCRIPTION_DATABASE, test=False):
+#         super().__init__(connector, table, test)
 
     @handle_database_errors
     async def get_free_messages(self, conn, chat_id):
         # get the bonus free messages if exist
-        sql = f"SELECT bonus_count FROM {self.table} WHERE chat_id = $1"
+        sql = f"SELECT bonus_count FROM {self.tables[2]} WHERE chat_id = $1"
         res = await self.connector.db_query(conn, sql, chat_id, method='fetchone')
         return res[0]
 
     @handle_database_errors
     async def get_expiration_date(self, conn, chat_id):
         # Retrieve the expiration date for the user
-        sql = f"SELECT expiration_date FROM {self.table} WHERE chat_id = $1"
+        sql = f"SELECT expiration_date FROM {self.tables[2]} WHERE chat_id = $1"
         res = await self.connector.db_query(conn, sql, chat_id, method='fetchone')
         return res[0]
 
     @handle_database_errors
     async def get_referral(self, conn, chat_id):
         # Get a referral link from the database
-        sql = f"SELECT referral_link FROM {self.table} WHERE chat_id = $1"
+        sql = f"SELECT referral_link FROM {self.tables[2]} WHERE chat_id = $1"
         res = await self.connector.db_query(conn, sql, chat_id, method='fetchone')
         return res[0]
 
     @handle_database_errors
     async def get_subscription(self, conn, chat_id):
         # Get the subscription status, start date, and expiration date for the user
-        sql = f"SELECT subscription_status, start_date, expiration_date FROM {self.table} WHERE chat_id = $1"
+        sql = f"SELECT subscription_status, start_date, expiration_date FROM {self.tables[2]} WHERE chat_id = $1"
         result = await self.connector.db_query(conn, sql, chat_id, method='fetchone')
         return (result.get('subscription_status'), result.get('start_date'), result.get('expiration_date'))
 
     @handle_database_errors
     async def user_exists(self, conn, chat_id):
-        sql = f'SELECT * FROM {self.table} WHERE chat_id = $1'
+        sql = f'SELECT * FROM {self.tables[2]} WHERE chat_id = $1'
         # Execute a query to retrieve the user by chat_id
         if await self.connector.db_query(conn, sql, chat_id, method='fetchone'):
             return True
@@ -248,38 +246,38 @@ class SubscriptionsInteractor(DatabaseInteractor):
 
     @handle_database_errors
     async def referred_by(self, conn, chat_id):
-        sql = f"SELECT referred_by FROM {self.table} WHERE chat_id = $1"
+        sql = f"SELECT referred_by FROM {self.tables[2]} WHERE chat_id = $1"
         res = await self.connector.db_query(conn, sql, chat_id, method='fetchone')
         return res[0]
 
     @handle_database_errors
     async def add_referree(self, conn, referree, chat_id):
-        sql = f"UPDATE {self.table} SET referred_by = $1 WHERE chat_id = $2"
+        sql = f"UPDATE {self.tables[2]} SET referred_by = $1 WHERE chat_id = $2"
         await self.connector.db_query(conn, sql, referree, chat_id, method='execute')
 
     @handle_database_errors
     async def add_referral_bonus(self, conn, referree, referral_bonus):
         # Execute the SQL query to increment the bonus count
-        sql = f"UPDATE {self.table} SET bonus_count = bonus_count + {referral_bonus} WHERE chat_id = $1"
+        sql = f"UPDATE {self.tables[2]} SET bonus_count = bonus_count + {referral_bonus} WHERE chat_id = $1"
         await self.connector.db_query(conn, sql, referree, method='execute')
 
     @handle_database_errors
     async def decrease_free_messages(self, conn, chat_id, amount):
         # Execute the SQL query to decrement the free messages count
-        sql = f"UPDATE {self.table} SET bonus_count = bonus_count - {amount} WHERE chat_id = $1"
+        sql = f"UPDATE {self.tables[2]} SET bonus_count = bonus_count - {amount} WHERE chat_id = $1"
         await self.connector.db_query(conn, sql, chat_id, method='execute')
 
     @handle_database_errors
     async def add_new_user(self, conn, user_id, revealed_date, referral_link):
         # Add a new user with default subscription status, start date, and expiration date
-        sql = f"INSERT INTO {self.table} (chat_id, subscription_status, revealed_date, referral_link) VALUES ($1, 0, " \
+        sql = f"INSERT INTO {self.tables[2]} (chat_id, subscription_status, revealed_date, referral_link) VALUES ($1, 0, " \
               f"$2, $3) "
         await self.connector.db_query(conn, sql, user_id, revealed_date, referral_link, method='execute')
 
     @handle_database_errors
     async def update_subscription_status(self, conn, chat_id, subscription_status, start_date, expiration_date):
         # Set the start and expiration dates for the user's subscription
-        sql = f"UPDATE {self.table} SET subscription_status = $1, start_date = $2, expiration_date = $3 WHERE chat_id " \
+        sql = f"UPDATE {self.tables[2]} SET subscription_status = $1, start_date = $2, expiration_date = $3 WHERE chat_id " \
               f"= $4 "
         await self.connector.db_query(conn, sql, subscription_status, start_date, expiration_date, chat_id, method='execute')
 
@@ -287,7 +285,7 @@ class SubscriptionsInteractor(DatabaseInteractor):
 class FantInteractor(DatabaseInteractor):
     tables_default = ["genre"]  # Replace with your table names
 
-    def __init__(self, connector):
+    def __init__(self, connector, test=False):
         super().__init__(connector)
         self.table = WORKS_DATABASE
         self.work_genre_table = WORK_GENRES
@@ -431,9 +429,9 @@ if __name__ == '__main__':
     # Connector to the fantlab database
     fant_db = DatabaseConnector('fantlab')
     # Executor for the options table
-    opt_ext = OptionsInteractor(fant_db, test=True)
-    mess_ext = MessagesInteractor(fant_db, test=True)
-    subs_ext = SubscriptionsInteractor(fant_db, test=True)
+    # opt_ext = OptionsInteractor(fant_db, test=True)
+    # mess_ext = MessagesInteractor(fant_db, test=True)
+    # subs_ext = SubscriptionsInteractor(fant_db, test=True)
 
     asyncio.run(checker())
 

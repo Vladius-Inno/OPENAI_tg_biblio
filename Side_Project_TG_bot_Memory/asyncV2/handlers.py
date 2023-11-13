@@ -7,15 +7,15 @@ import requests
 
 
 class Handler:
-    def __init__(self, mess_ext=None, opt_ext=None, subs_ext=None, telegram_ext=None):
-        self.mess_ext = mess_ext
-        self.opt_ext = opt_ext
-        self.subs_ext = subs_ext
+    def __init__(self, db_int=None, telegram_ext=None):
+        self.db_int = db_int
+        # self.opt_ext = opt_ext
+        # self.subs_ext = subs_ext
         self.telegram_ext = telegram_ext
 
     async def handle_clear_command(self, conn, chat_id):
         # Update the messages associated with the specified chat_id, so they are "cleared"
-        await self.mess_ext.clear_messages(conn, chat_id)
+        await self.db_int.clear_messages(conn, chat_id)
 
     async def handle_info_command(self, conn, chat_id, validity, messages_left, free_messages_left, referral_bonus):
         subscription_status = 'Активна' if validity else 'Не активна'
@@ -40,7 +40,7 @@ class Handler:
             # # Retrieve the expiration date for the user
             # cursor_pay.execute("SELECT expiration_date FROM subscriptions WHERE chat_id = ?", (chat_id,))
             # result = cursor_pay.fetchone()[0]
-            result = await self.subs_ext.get_expiration_date(conn, chat_id)
+            result = await self.db_int.get_expiration_date(conn, chat_id)
 
             expiration_date = datetime.strptime(result, '%Y-%m-%d').strftime('%d-%m-%Y')
             message = f'''
@@ -109,7 +109,7 @@ class Handler:
 
     async def refer_command(self, conn, chat_id):
         # Get a referral link from the database
-        result = await self.subs_ext.get_referral(conn, chat_id)
+        result = await self.db_int.get_referral(conn, chat_id)
         print('The referral link is', result)
 
         message = f'''
@@ -152,7 +152,7 @@ class Handler:
         try:
             if result['message']['successful_payment']:
                 try:
-                    await self.telegram_ext.handle_successful_payment(conn, result['message'], self.subs_ext)
+                    await self.telegram_ext.handle_successful_payment(conn, result['message'], self.db_int)
                     print('Successful payment')
                     # last_update = str(int(result['update_id']))
                 except requests.exceptions.RequestException as e:
