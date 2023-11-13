@@ -379,18 +379,24 @@ class FantInteractor(DatabaseInteractor):
                   f"({self.user_actions_table}.action_type = 'like' OR {self.user_actions_table}.action_type = " \
                   f"'dislike') AND {self.user_actions_table}.rate IS NULL"
             await self.connector.db_query(conn, sql, chat_id, work_id, pref, rate)
+            print(f'User {chat_id} preference updated (rated)')
             return
 
+        # TODO Rewrite to 'no_pref'
         # if one reverts like or dislike
         if pref in ['unlike', 'undislike']:
             sql = f'DELETE from {self.user_actions_table} WHERE chat_id = $1 and w_id = $2'
             await self.connector.db_query(conn, sql, chat_id, work_id, method='execute')
+            print(f'User {chat_id} preference updated (reverts)')
             return
 
+        # TODO Rewrite to 'no_pref'
         # if one deletes the rate
         if pref == 'unrate':
             sql = f'DELETE from {self.user_actions_table} WHERE chat_id = $1 and w_id = $2 and rate IS NOT NULL'
             await self.connector.db_query(conn, sql, chat_id, work_id, method='execute')
+            print(f'User {chat_id} preference updated (unrated)')
+
             return
 
         # if one is shown the work, likes or dislikes the work
@@ -400,7 +406,36 @@ class FantInteractor(DatabaseInteractor):
         f" AND {self.user_actions_table}.rate IS NULL"
         # sql = f"INSERT INTO {self.user_actions_table} (chat_id, w_id, action_type) VALUES ($1, $2, $3)"
         await self.connector.db_query(conn, sql, chat_id, work_id, pref)
+        print(f'User {chat_id} preference updated (general)')
         return
+
+    @handle_database_errors
+    async def update_recommendations(self, conn, chat_id, work_id):
+        # SQL code
+        sql_code = """
+            -- Update recommendations for a user when they rate or like a specific book
+            UPDATE recommended_books
+            SET score = 
+                CASE
+                    WHEN ua.action_type = 'like' THEN 0.5
+                    WHEN ua.action_type = 'rate' THEN
+                        CASE
+                            WHEN ua.rate >= 6 THEN ua.rate::float / 10.0
+                            ELSE NULL -- Handle other cases as needed
+                        END
+                    ELSE NULL -- Handle other cases as needed
+                END
+            FROM user_actions ua
+            WHERE 
+                recommended_books.chat_id = ua.chat_id
+                AND recommended_books.work_id = ua.w_id
+                AND ua.action_type IN ('like', 'rate')
+                AND ua.chat_id = $1
+                AND ua.w_id = $2;
+        """
+
+        await self.connector.db_query(conn, sql_code, chat_id, work_id, method='execute')
+        print(f"Recommendations for {chat_id} about the book {work_id} updated successfully!")
 
 
 async def checker():
@@ -421,6 +456,59 @@ async def checker():
         #     await fant_db.close_db_pool()
 
 
+# the initial population for the recomendations
+def update_similars():
+    import psycopg2
+
+    # Connect to the PostgreSQL database
+    with psycopg2.connect(
+            host=host_name,
+            database="fantlab",
+            user=user_name,
+            password=password
+    ) as conn:
+
+        # Create a cursor object to interact with the database
+        with conn.cursor() as cur:
+            try:
+                # Execute your SQL query
+                cur.execute("""
+insert into recommended_books (chat_id, work_id, score)
+select
+ua.chat_id,
+coalesce(bs.similars, ua.w_id) as work_id,
+case
+when ua.action_type = 'like' then 0.5
+when ua.action_type = 'rate' then
+            CASE
+                WHEN ua.rate >= 6 THEN ua.rate::float / 10.0
+                ELSE NULL -- Handle other cases as needed
+            END
+else null
+end as score
+from user_actions ua
+join
+works b on ua.w_id = b.w_id
+left join
+unnest(b.similars) bs(similars)
+on
+true
+where
+ua.action_type in ('like', 'rate')
+ON CONFLICT (chat_id, work_id) DO NOTHING;
+""")
+
+                # Fetch the results if needed
+                results = cur.fetchall()
+
+                # Commit the changes to the database
+                conn.commit()
+
+            except Exception as e:
+                # Handle any exceptions or errors
+                print(f"Error: {e}")
+
+
 if __name__ == '__main__':
     # mess_db = DatabaseConnector('messages', test=True)
     # cursor = mess_db.get_cursor()
@@ -428,12 +516,13 @@ if __name__ == '__main__':
 
     # Connector to the fantlab database
     fant_db = DatabaseConnector('fantlab')
+    update_similars()
     # Executor for the options table
     # opt_ext = OptionsInteractor(fant_db, test=True)
     # mess_ext = MessagesInteractor(fant_db, test=True)
     # subs_ext = SubscriptionsInteractor(fant_db, test=True)
 
-    asyncio.run(checker())
+    # asyncio.run(checker())
 
     # # Cursor the fantlab database
     # fant_cursor = fant_db.get_cursor()

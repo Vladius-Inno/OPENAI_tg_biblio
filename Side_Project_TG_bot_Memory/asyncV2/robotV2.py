@@ -576,6 +576,10 @@ async def handle_callback_query(callback_query):
 
         return run_next
 
+async def update_user_prefs(chat_id, work_id, pref, rate_digit=None):
+    async with await connector._get_user_connection(chat_id) as conn:
+        await fant_ext.update_user_prefs(conn, chat_id, work_id, pref, rate_digit)
+
 
 async def like(conn, chat_id, work_id, msg_id):
 
@@ -590,8 +594,7 @@ async def like(conn, chat_id, work_id, msg_id):
     }
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
-    await fant_ext.update_user_prefs(conn, chat_id, work_id, 'like')
-    print(f'User {chat_id} preference updated')
+    asyncio.create_task(update_user_prefs(chat_id, work_id, 'like'))
 
 
 async def unlike(conn, chat_id, work_id, msg_id):
@@ -602,8 +605,7 @@ async def unlike(conn, chat_id, work_id, msg_id):
     keyboard = set_keyboard_rate_work(work_id)
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
-    await fant_ext.update_user_prefs(conn, chat_id, work_id, 'unlike')
-    print(f'User {chat_id} preference deleted')
+    asyncio.create_task(update_user_prefs(chat_id, work_id, 'unlike'))
 
 
 async def unrate(conn, chat_id, work_id, msg_id):
@@ -614,8 +616,7 @@ async def unrate(conn, chat_id, work_id, msg_id):
     keyboard = set_keyboard_rate_work(work_id)
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
-    await fant_ext.update_user_prefs(conn, chat_id, work_id, 'unrate')
-    print(f'User {chat_id} preference deleted')
+    asyncio.create_task(update_user_prefs(chat_id, work_id, 'unrate'))
 
 
 async def undislike(conn, chat_id, work_id, msg_id):
@@ -626,8 +627,7 @@ async def undislike(conn, chat_id, work_id, msg_id):
     keyboard = set_keyboard_rate_work(work_id)
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
-    await fant_ext.update_user_prefs(conn, chat_id, work_id, 'undislike')
-    print(f'User {chat_id} preference deleted')
+    asyncio.create_task(update_user_prefs(chat_id, work_id, 'undislike'))
 
 
 async def dislike(conn, chat_id, work_id, msg_id):
@@ -643,8 +643,7 @@ async def dislike(conn, chat_id, work_id, msg_id):
     }
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
-    await fant_ext.update_user_prefs(conn, chat_id, work_id, 'dislike')
-    print(f'User {chat_id} preference updated')
+    asyncio.create_task(update_user_prefs(chat_id, work_id, 'dislike'))
 
 
 async def rate(conn, chat_id, work_id, msg_id):
@@ -697,8 +696,7 @@ async def rate_digit(conn, chat_id, work_id, msg_id, rate_string):
     }
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
-    await fant_ext.update_user_prefs(conn, chat_id, work_id, 'rate', rate_digit)
-    print(f'User {chat_id} preference updated')
+    asyncio.create_task(update_user_prefs(chat_id, work_id, 'rate', rate_digit))
 
 
 async def add_new_user(user_id):
