@@ -377,7 +377,7 @@ class FantInteractor(DatabaseInteractor):
             sql = f"INSERT INTO {self.user_actions_table} (chat_id, w_id, action_type, rate) VALUES ($1, $2, $3, " \
                   f"$4) ON CONFLICT (chat_id, w_id) DO UPDATE SET action_type = $3, rate = $4 WHERE " \
                   f"({self.user_actions_table}.action_type = 'like' OR {self.user_actions_table}.action_type = " \
-                  f"'dislike') AND {self.user_actions_table}.rate IS NULL"
+                  f"'dislike' OR {self.user_actions_table}.action_type = 'no_pref') AND {self.user_actions_table}.rate IS NULL"
             await self.connector.db_query(conn, sql, chat_id, work_id, pref, rate)
             print(f'User {chat_id} preference updated (rated)')
             return
@@ -410,31 +410,56 @@ class FantInteractor(DatabaseInteractor):
         return
 
     @handle_database_errors
-    async def update_recommendations(self, conn, chat_id, work_id):
+    async def update_recommendations(self, conn, chat_id, work_id, pref, rate_digit):
         # SQL code
+    #     sql_code = """
+    # INSERT INTO recommended_books (chat_id, work_id, score)
+    # SELECT
+    #   ua.chat_id,
+    #   unnested_similars.similar_work_id,
+    #   CASE
+    #     WHEN ua.action_type = 'like' THEN 0.5
+    #     WHEN ua.action_type = 'rate' THEN
+    #       CASE
+    #         WHEN ua.rate >= 6 THEN ua.rate::FLOAT / 10.0
+    #         ELSE NULL -- Handle other cases as needed
+    #       END
+    #     ELSE NULL
+    #   END AS score
+    # FROM user_actions ua
+    # JOIN works b ON ua.w_id = b.w_id
+    # LEFT JOIN LATERAL unnest(b.similars) AS unnested_similars(similar_work_id) ON TRUE
+    # WHERE ua.action_type IN ('like', 'rate') AND ua.chat_id = $1 AND ua.w_id = $2
+    # ON CONFLICT (chat_id, work_id) DO UPDATE
+    # SET score = EXCLUDED.score; -- Update the score in case of conflict
+    # """
         sql_code = """
-            -- Update recommendations for a user when they rate or like a specific book
-            UPDATE recommended_books
-            SET score = 
-                CASE
-                    WHEN ua.action_type = 'like' THEN 0.5
-                    WHEN ua.action_type = 'rate' THEN
-                        CASE
-                            WHEN ua.rate >= 6 THEN ua.rate::float / 10.0
-                            ELSE NULL -- Handle other cases as needed
-                        END
-                    ELSE NULL -- Handle other cases as needed
-                END
-            FROM user_actions ua
-            WHERE 
-                recommended_books.chat_id = ua.chat_id
-                AND recommended_books.work_id = ua.w_id
-                AND ua.action_type IN ('like', 'rate')
-                AND ua.chat_id = $1
-                AND ua.w_id = $2;
-        """
+INSERT INTO recommended_books (chat_id, work_id, score)
+SELECT
+    $2 AS chat_id,
+    similar_works.w_id AS work_id,
+    CASE
+        WHEN ua.action_type = 'like' THEN 0.5
+        WHEN ua.action_type = 'rate' THEN ua.rate::FLOAT / 10.0
+        WHEN ua.action_type = 'dislike' THEN -0.2
+        ELSE 0.0
+    END AS score
+FROM
+    user_actions ua
+JOIN
+    works w ON ua.w_id = w.w_id
+JOIN
+    unnest(w.similars) similar_works(w_id) ON true
+WHERE
+    ua.w_id = $1
+ON CONFLICT (chat_id, work_id) DO UPDATE
+SET
+    score = EXCLUDED.score;
+    """
+        # rate = 7
+        # print(f"Debug: chat_id={chat_id}, work_id={work_id}, action_type={pref}, rate={rate_digit}")
 
-        await self.connector.db_query(conn, sql_code, chat_id, work_id, method='execute')
+        await self.connector.db_query(conn, sql_code, work_id, chat_id, method='execute')
         print(f"Recommendations for {chat_id} about the book {work_id} updated successfully!")
 
 
