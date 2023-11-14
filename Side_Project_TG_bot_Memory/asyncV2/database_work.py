@@ -93,6 +93,7 @@ class DatabaseConnector:
             return result
         elif method == 'fetchone':
             return result[0] if result else None
+
         elif method == 'execute':
             return None
         else:
@@ -281,6 +282,54 @@ class DatabaseInteractor:
               f"= $4 "
         await self.connector.db_query(conn, sql, subscription_status, start_date, expiration_date, chat_id, method='execute')
 
+    @handle_database_errors
+    async def get_recommendation(self, conn, chat_id):
+        select_query = """
+                   WITH highest_scored_book AS (
+                       SELECT
+                           rb.work_id
+                       FROM
+                           recommended_books rb
+                       WHERE
+                           rb.chat_id = $1
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM user_actions ua
+                               WHERE ua.chat_id = $1
+                                   AND ua.w_id = rb.work_id
+                                   AND ua.action_type IN ('like', 'dislike', 'rate')
+                           )
+                       ORDER BY
+                           rb.score DESC
+                       LIMIT 1
+                   )
+                   SELECT work_id FROM highest_scored_book;
+               """
+
+        # Query to delete the selected book from recommended_books
+        delete_query = """
+                DELETE FROM recommended_books
+                WHERE chat_id = $1 AND work_id = $2;
+               """
+        recommendation = await self.connector.db_query(conn, select_query, chat_id, method='fetchone')
+        recommendation_id = recommendation[0]
+        if recommendation_id:
+            print(f"Recommendation for {chat_id} is the book {recommendation_id}!")
+            await self.connector.db_query(conn, delete_query, chat_id, recommendation_id, method='execute')
+            print(f'Book {recommendation_id} DELETED from recommendations')
+            return recommendation_id
+
+    @handle_database_errors
+    async def get_work_db(self, conn, work_id):
+        sql = f"SELECT work_json FROM works WHERE w_id = $1"
+        result = await self.connector.db_query(conn, sql, work_id, method='fetchone')
+        if result:
+            data_json = json.loads(result['work_json'])
+            print(data_json)
+        else:
+            return None
+        return fantlab.Work(data_json)
+
 
 class FantInteractor(DatabaseInteractor):
     tables_default = ["genre"]  # Replace with your table names
@@ -348,17 +397,6 @@ class FantInteractor(DatabaseInteractor):
         return True
 
     @handle_database_errors
-    async def get_work_db(self, conn, work_id):
-        sql = f"SELECT work_json FROM {self.table} WHERE w_id = $1"
-        result = await self.connector.db_query(conn, sql, work_id, method='fetchone')
-        if result:
-            data_json = result[0]
-            # print(data_json)
-        else:
-            return None
-        return fantlab.Work(data_json)
-
-    @handle_database_errors
     async def update_work_genres(self, conn, work_id, genres: list):
         sql = f"INSERT INTO {self.work_genre_table} (w_id, genre_id, genre_weight, weight_voters) VALUES ($1, $2, $3, $4)"
         await self.connector.db_query(conn, sql, genres, method='executemany')
@@ -411,28 +449,6 @@ class FantInteractor(DatabaseInteractor):
 
     @handle_database_errors
     async def update_recommendations(self, conn, chat_id, work_id, pref, rate_digit):
-        # SQL code
-    #     sql_code = """
-    # INSERT INTO recommended_books (chat_id, work_id, score)
-    # SELECT
-    #   ua.chat_id,
-    #   unnested_similars.similar_work_id,
-    #   CASE
-    #     WHEN ua.action_type = 'like' THEN 0.5
-    #     WHEN ua.action_type = 'rate' THEN
-    #       CASE
-    #         WHEN ua.rate >= 6 THEN ua.rate::FLOAT / 10.0
-    #         ELSE NULL -- Handle other cases as needed
-    #       END
-    #     ELSE NULL
-    #   END AS score
-    # FROM user_actions ua
-    # JOIN works b ON ua.w_id = b.w_id
-    # LEFT JOIN LATERAL unnest(b.similars) AS unnested_similars(similar_work_id) ON TRUE
-    # WHERE ua.action_type IN ('like', 'rate') AND ua.chat_id = $1 AND ua.w_id = $2
-    # ON CONFLICT (chat_id, work_id) DO UPDATE
-    # SET score = EXCLUDED.score; -- Update the score in case of conflict
-    # """
         sql_code = """
 INSERT INTO recommended_books (chat_id, work_id, score)
 SELECT
@@ -456,9 +472,6 @@ ON CONFLICT (chat_id, work_id) DO UPDATE
 SET
     score = EXCLUDED.score;
     """
-        # rate = 7
-        # print(f"Debug: chat_id={chat_id}, work_id={work_id}, action_type={pref}, rate={rate_digit}")
-
         await self.connector.db_query(conn, sql_code, work_id, chat_id, method='execute')
         print(f"Recommendations for {chat_id} about the book {work_id} updated successfully!")
 
@@ -534,14 +547,27 @@ ON CONFLICT (chat_id, work_id) DO NOTHING;
                 print(f"Error: {e}")
 
 
+async def work_printer():
+    await fant_db._create_db_pool()
+
+    async with await fant_db._get_user_connection(163905035) as conn:
+        work = await connector.get_work_db(conn, 5000)
+    print(type(work))
+
+
 if __name__ == '__main__':
     # mess_db = DatabaseConnector('messages', test=True)
     # cursor = mess_db.get_cursor()
     # opt_ext = OptionsInteractor(cursor, mess_db.connection, test=True)
 
     # Connector to the fantlab database
-    fant_db = DatabaseConnector('fantlab')
-    update_similars()
+    fant_db = DatabaseConnector('fantlab', True)
+    # update_similars()
+
+    connector = DatabaseInteractor(fant_db)
+
+    asyncio.run(work_printer())
+
     # Executor for the options table
     # opt_ext = OptionsInteractor(fant_db, test=True)
     # mess_ext = MessagesInteractor(fant_db, test=True)

@@ -97,6 +97,7 @@ RANDOM_BOOK_COMMAND = "*Случайная книга*"
 RECOMMEND_COMMAND = "*Рекомендации*"
 RECOMMENDATION_EXIT_COMMAND = "*Выйти*"
 PREFERENCES_COMMAND = "*Предпочтения*"
+RECOMMEND_BOOK = '*Рекомендация*'
 
 LIT_PROMPT = '''
 You are now in the Literature Expert mode. 
