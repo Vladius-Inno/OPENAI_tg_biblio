@@ -420,21 +420,14 @@ class FantInteractor(DatabaseInteractor):
             print(f'User {chat_id} preference updated (rated)')
             return
 
-        # TODO Rewrite to 'no_pref'
         # if one reverts like or dislike
-        if pref in ['unlike', 'undislike']:
-            sql = f'DELETE from {self.user_actions_table} WHERE chat_id = $1 and w_id = $2'
+        if pref in ['unlike', 'undislike', 'unrate']:
+            sql = f"INSERT INTO {self.user_actions_table} (chat_id, w_id, action_type, rate) VALUES " \
+                  f"($1, $2, 'no_pref', NULL) ON CONFLICT (chat_id, w_id) DO UPDATE " \
+                  f"SET action_type = 'no_pref', rate = NULL WHERE {self.user_actions_table}.action_type = 'like' OR " \
+                  f"{self.user_actions_table}.action_type = 'dislike' OR {self.user_actions_table}.action_type = 'rate'"
             await self.connector.db_query(conn, sql, chat_id, work_id, method='execute')
             print(f'User {chat_id} preference updated (reverts)')
-            return
-
-        # TODO Rewrite to 'no_pref'
-        # if one deletes the rate
-        if pref == 'unrate':
-            sql = f'DELETE from {self.user_actions_table} WHERE chat_id = $1 and w_id = $2 and rate IS NOT NULL'
-            await self.connector.db_query(conn, sql, chat_id, work_id, method='execute')
-            print(f'User {chat_id} preference updated (unrated)')
-
             return
 
         # if one is shown the work, likes or dislikes the work
@@ -442,7 +435,6 @@ class FantInteractor(DatabaseInteractor):
         f") ON CONFLICT (chat_id, w_id) DO UPDATE SET action_type = $3 WHERE " \
         f"{self.user_actions_table}.action_type = 'no_pref'" \
         f" AND {self.user_actions_table}.rate IS NULL"
-        # sql = f"INSERT INTO {self.user_actions_table} (chat_id, w_id, action_type) VALUES ($1, $2, $3)"
         await self.connector.db_query(conn, sql, chat_id, work_id, pref)
         print(f'User {chat_id} preference updated (general)')
         return

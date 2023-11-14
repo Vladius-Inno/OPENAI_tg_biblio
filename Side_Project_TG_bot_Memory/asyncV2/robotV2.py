@@ -51,7 +51,6 @@ service = fantlab.BookDatabase(api_connect)
 
 async def store_book(conn, work, chat_id):
 
-    # async with await connector._get_user_connection(chat_id) as conn:
     stored = await fant_ext.store_work(conn, work)
 
     if stored:
@@ -71,9 +70,6 @@ async def store_book(conn, work, chat_id):
             print(f"Updated the similars for {work.id}")
         else:
             print(f'No similars for {work.id}')
-
-    # update initial user prefs
-    await fant_ext.update_user_prefs(conn, chat_id, work.id, 'no_pref')
 
 
 async def handle_random_book(chat_id):
@@ -96,8 +92,10 @@ async def handle_random_book(chat_id):
         cache[last_work_cache] = work.id
 
         # store the book in the DB
-        # asyncio.create_task(store_book(work, chat_id))
         await store_book(conn, work, chat_id)
+
+        # update initial user prefs
+        await fant_ext.update_user_prefs(conn, chat_id, work.id, 'no_pref')
 
     return work.id, chat_id
 
@@ -131,6 +129,9 @@ async def handle_recommend_book(chat_id):
         # store the book in the DB
         if to_store:
             await store_book(conn, work, chat_id)
+
+        # update initial user prefs
+        await fant_ext.update_user_prefs(conn, chat_id, work.id, 'no_pref')
 
     return work.id, chat_id
 
