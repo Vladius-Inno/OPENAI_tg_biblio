@@ -133,6 +133,7 @@ async def handle_recommend_book(chat_id):
 
         else:
             print('The recommended books list is EMPTY')
+            await telegram.send_text('Недостаточно оценок! Запросите ещё несколько случайных книг', chat_id)
 
 
 
