@@ -89,7 +89,7 @@ async def handle_random_book(chat_id):
 
         # store in cache the id if the last shown work
         last_work_cache = str(chat_id) + '_last_work'
-        cache[last_work_cache] = work.id
+        cache[last_work_cache] = {'work_id': work.id, 'show_type': 'random'}
 
         # store the book in the DB
         await store_book(conn, work, chat_id)
@@ -116,24 +116,25 @@ async def handle_recommend_book(chat_id):
                 to_store = True
             else:
                 print(f"Got the {recommend_work_id} from the DB")
+            # send the book to TG
+            await telegram.send_work(work, chat_id, set_keyboard_rate_work(work.id))
+            # store in cache the id if the last shown work
+            last_work_cache = str(chat_id) + '_last_work'
+            cache[last_work_cache] = {'work_id': work.id, 'show_type': 'recommendation'}
+
+            # store the book in the DB
+            if to_store:
+                await store_book(conn, work, chat_id)
+
+            # update initial user prefs
+            await fant_ext.update_user_prefs(conn, chat_id, work.id, 'no_pref')
+
+            return work.id, chat_id
+
         else:
             print('The recommended books list is EMPTY')
 
-        # send the book to TG
-        await telegram.send_work(work, chat_id, set_keyboard_rate_work(work.id))
 
-        # store in cache the id if the last shown work
-        last_work_cache = str(chat_id) + '_last_work'
-        cache[last_work_cache] = work.id
-
-        # store the book in the DB
-        if to_store:
-            await store_book(conn, work, chat_id)
-
-        # update initial user prefs
-        await fant_ext.update_user_prefs(conn, chat_id, work.id, 'no_pref')
-
-    return work.id, chat_id
 
 async def handle_recomendation(chat_id):
     pass
@@ -313,11 +314,7 @@ async def parse_updates(result, last_update_json):
     last_update = last_update_json['last_update']
     last_update_new = last_update_json
 
-    # if the next book must be loaded
-    # run_next = False
-
     if float(result['update_id']) > float(last_update):
-        print('Start parsing', result['update_id'])
         print('Start parsing', result['update_id'])
         # handle the pre_check_out
         # TODO Drag to the payment lib
@@ -367,10 +364,11 @@ async def parse_updates(result, last_update_json):
         try:
             if result['callback_query']:
                 print("HERE IN UPDATES")
-                # handle like, rates
+                # handle like, rates which cause the next card to show, includes the type of card
                 run_next = await handle_callback_query(result['callback_query'])
                 last_update = str(int(result['update_id']))
-                last_update_new['extras'].update(run_next)
+                # last_update_new['extras'].update(run_next)
+                last_update_new['extras'].append(run_next)
                 last_update_new['last_update'] = last_update
                 write_update(last_update_new)
                 return run_next
@@ -596,20 +594,21 @@ async def handle_callback_query(callback_query):
             if call_action == LIKE:
                 await like(conn, chat_id, int(work_to_handle), msg_id)
                 # check if the interaction is with the last card in the chat
-                if cache[data_to_get] == int(work_to_handle):
-                    run_next = {str(chat_id): 'run_next'}
+                if cache[data_to_get]['work_id'] == int(work_to_handle):
+                    # put into run_next the order to run next for chat_id and the type of next card
+                    run_next = {'chat_id': str(chat_id), 'what': 'run_next', 'type': cache[data_to_get]['show_type']}
             if call_action == DISLIKE:
                 await dislike(conn, chat_id, int(work_to_handle), msg_id)
                 # check if the interaction is with the last card in the chat
-                if cache[data_to_get] == int(work_to_handle):
-                    run_next = {str(chat_id): 'run_next'}
+                if cache[data_to_get]['work_id'] == int(work_to_handle):
+                    run_next = {'chat_id': str(chat_id), 'what': 'run_next', 'type': cache[data_to_get]['show_type']}
             if call_action == RATE:
                 await rate(conn, chat_id, work_to_handle, msg_id)
             if call_action in RATES:
                 await rate_digit(conn, chat_id, int(work_to_handle), msg_id, call_action)
                 # check if the interaction is with the last card in the chat
-                if cache[data_to_get] == int(work_to_handle):
-                    run_next = {str(chat_id): 'run_next'}
+                if cache[data_to_get]['work_id'] == int(work_to_handle):
+                    run_next = {'chat_id': str(chat_id), 'what': 'run_next', 'type': cache[data_to_get]['show_type']}
             if call_action == UNLIKE:
                 await unlike(conn, chat_id, int(work_to_handle), msg_id)
             if call_action == UNDISLIKE:
@@ -618,8 +617,8 @@ async def handle_callback_query(callback_query):
                 await unrate(conn, chat_id, int(work_to_handle), msg_id)
             if call_action == DONT_RATE:
                 await dont_rate(conn, chat_id, int(work_to_handle), msg_id)
-
         return run_next
+
 
 async def update_user_prefs(chat_id, work_id, pref, rate_digit=None):
     async with await connector._get_user_connection(chat_id) as conn:
@@ -632,6 +631,9 @@ async def like(conn, chat_id, work_id, msg_id):
 
     print(chat_id, 'Likes', work_id)
 
+    await update_user_prefs(chat_id, work_id, 'like')
+    # asyncio.create_task(update_user_prefs(chat_id, work_id, 'like'))
+
     # change the inline-keyboard
     keyboard = {
         'inline_keyboard': [[
@@ -641,52 +643,50 @@ async def like(conn, chat_id, work_id, msg_id):
     }
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
-    asyncio.create_task(update_user_prefs(chat_id, work_id, 'like'))
-
 
 async def unlike(conn, chat_id, work_id, msg_id):
 
     print(chat_id, 'UnLikes', work_id)
 
-    asyncio.create_task(update_user_prefs(chat_id, work_id, 'unlike'))
+    # asyncio.create_task(update_user_prefs(chat_id, work_id, 'unlike'))
+    await update_user_prefs(chat_id, work_id, 'unrate')
 
     # change the inline-keyboard
     keyboard = set_keyboard_rate_work(work_id)
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
-
 
 
 async def unrate(conn, chat_id, work_id, msg_id):
 
     print(chat_id, 'UnRates', work_id)
 
-    asyncio.create_task(update_user_prefs(chat_id, work_id, 'unrate'))
+    # asyncio.create_task(update_user_prefs(chat_id, work_id, 'unrate'))
+    await update_user_prefs(chat_id, work_id, 'unrate')
+
 
     # change the inline-keyboard
     keyboard = set_keyboard_rate_work(work_id)
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
-
 
 
 async def undislike(conn, chat_id, work_id, msg_id):
 
     print(chat_id, 'UnDisikes', work_id)
 
-    asyncio.create_task(update_user_prefs(chat_id, work_id, 'undislike'))
-
+    await update_user_prefs(chat_id, work_id, 'undislike')
+    # asyncio.create_task(update_user_prefs(chat_id, work_id, 'undislike'))
 
     # change the inline-keyboard
     keyboard = set_keyboard_rate_work(work_id)
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
 
-
 async def dislike(conn, chat_id, work_id, msg_id):
 
     print(chat_id, 'Dislikes', work_id)
 
-    asyncio.create_task(update_user_prefs(chat_id, work_id, 'dislike'))
-
+    # asyncio.create_task(update_user_prefs(chat_id, work_id, 'dislike'))
+    await update_user_prefs(chat_id, work_id, 'dislike')
 
     # change the inline-keyboard
     keyboard = {
@@ -696,7 +696,6 @@ async def dislike(conn, chat_id, work_id, msg_id):
         ]]
     }
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
-
 
 
 async def rate(conn, chat_id, work_id, msg_id):
@@ -737,7 +736,8 @@ async def rate_digit(conn, chat_id, work_id, msg_id, rate_string):
         return
     rate_digit = RATES.index(rate_string) + 1
     print(f'{chat_id} rates {work_id} as {rate_digit}')
-    asyncio.create_task(update_user_prefs(chat_id, work_id, 'rate', rate_digit))
+    # asyncio.create_task(update_user_prefs(chat_id, work_id, 'rate', rate_digit))
+    await update_user_prefs(chat_id, work_id, 'rate', rate_digit)
 
     text = f"Rated {rate_digit}. Change?"
 
@@ -749,7 +749,6 @@ async def rate_digit(conn, chat_id, work_id, msg_id, rate_string):
         ]]
     }
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
-
 
 
 async def add_new_user(user_id):
@@ -840,14 +839,15 @@ async def main():
             # parse extras, if exists, there might be run_next code to run the next random book
             if last_update['extras']:
                 extras = last_update['extras']
-                keys = list(extras.keys())
-                for key in keys:
-                    if extras[key] == 'run_next':
-                        print(f'{key} wants to run next')
-                        last_update['extras'].pop(key)
+                for idx, user_desire in enumerate(extras[:]):
+                    if user_desire['what'] == 'run_next':
+                        print(f'User {user_desire["chat_id"]} wants to run next for {user_desire["type"]}')
+                        last_update['extras'] = []
                         write_update(last_update)
-                        chat_id = int(key)
-                        asyncio.create_task(handle_random_book(chat_id))
+                        if user_desire['type'] == 'random':
+                            asyncio.create_task(handle_random_book(int(user_desire['chat_id'])))
+                        if user_desire['type'] == 'recommendation':
+                            asyncio.create_task(handle_recommend_book(int(user_desire['chat_id'])))
 
             # iterate on the list of updates
             for res in result:

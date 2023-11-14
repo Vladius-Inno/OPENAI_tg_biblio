@@ -312,8 +312,8 @@ class DatabaseInteractor:
                 WHERE chat_id = $1 AND work_id = $2;
                """
         recommendation = await self.connector.db_query(conn, select_query, chat_id, method='fetchone')
-        recommendation_id = recommendation[0]
-        if recommendation_id:
+        if recommendation:
+            recommendation_id = recommendation[0]
             print(f"Recommendation for {chat_id} is the book {recommendation_id}!")
             await self.connector.db_query(conn, delete_query, chat_id, recommendation_id, method='execute')
             print(f'Book {recommendation_id} DELETED from recommendations')
