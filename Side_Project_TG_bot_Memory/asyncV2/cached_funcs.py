@@ -1,15 +1,11 @@
 # -*- coding: utf-8 -*-
 
 import diskcache
-import os
 from datetime import datetime, timedelta
+from constants import TIME_DELTA, cache_dir
 
-cache_dir = os.environ.get("CACHE_DIR", "default_cache_dir")
 # Create a disk cache
 cache = diskcache.Cache(cache_dir)
-
-
-TIME_DELTA = timedelta(hours=12)
 
 
 async def user_exists(ext, conn, chat_id, func: str):

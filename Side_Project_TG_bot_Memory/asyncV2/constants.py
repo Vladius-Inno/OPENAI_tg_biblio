@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+from datetime import timedelta
 
 # OpenAI secret Key
 API_KEY = os.environ['API_KEY']
@@ -36,6 +37,11 @@ SUBSCRIPTION_COMMAND = '/pay'
 SUBSCRIPTION_DATABASE = 'subscriptions.db'
 MESSAGES_DATABASE = 'messages.db'
 OPTIONS_DATABASE = 'options.db'
+
+TIME_DELTA = timedelta(hours=12)
+cache_dir = os.environ.get("CACHE_DIR", "default_cache_dir")
+
+
 
 # SBER_TOKEN_TEST = "401643678:TEST:266f8c81-0fc1-46ac-b57f-64a5fcc97616"
 # Номер карты	2200 0000 0000 0053

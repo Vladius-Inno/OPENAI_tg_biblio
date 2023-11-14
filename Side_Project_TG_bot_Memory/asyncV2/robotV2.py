@@ -1,6 +1,5 @@
 # version 0.0.1, working on news
 import json
-
 import requests
 import sys
 import asyncio
@@ -12,8 +11,7 @@ from OpenAI import openAI
 from group_handle import handle_supergroup
 from fant_random_simple import random_parsed
 import cached_funcs
-
-
+from cached_funcs import cache
 from constants import BOT_TOKEN, BOT_NAME, FILENAME, RATE_1, RATE_2, RATE_3, RATE_4, RATE_5, RATE_6, RATE_7, RATE_8, \
     RATE_9, RATE_10, DONT_RATE,  RATES, UNLIKE, UNDISLIKE, UNRATE, \
     CLEAR_COMMAND, START_COMMAND, INFO_COMMAND, REFERRAL_COMMAND, HELP_COMMAND, RECOM_COMMAND, \
@@ -92,6 +90,10 @@ async def handle_random_book(chat_id):
 
         # send the book to TG
         await telegram.send_work(work, chat_id, set_keyboard_rate_work(work.id))
+
+        # store in cache the id if the last shown work
+        last_work_cache = str(chat_id) + '_last_work'
+        cache[last_work_cache] = work.id
 
         # store the book in the DB
         # asyncio.create_task(store_book(work, chat_id))
@@ -551,28 +553,38 @@ async def handle_callback_query(callback_query):
         # the flag to load the next book
         run_next = {}
 
-        if callback_data.split()[0] in CALLBACKS:
+        call_action = callback_data.split()[0]
+        work_to_handle = callback_data.split()[1]
+        data_to_get = str(chat_id) + '_last_work'
+
+        if call_action in CALLBACKS:
             print('Here comes the callback', callback_data)
             # transfer the chat_id, the work_id which is extracted from the callback, and the msg_id
-            if callback_data.split()[0] == LIKE:
-                await like(conn, chat_id, int(callback_data.split()[1]), msg_id)
-                run_next = {str(chat_id): 'run_next'}
-            if callback_data.split()[0] == DISLIKE:
-                await dislike(conn, chat_id, int(callback_data.split()[1]), msg_id)
-                run_next = {str(chat_id): 'run_next'}
-            if callback_data.split()[0] == RATE:
-                await rate(conn, chat_id, callback_data.split()[1], msg_id)
-            if callback_data.split()[0] in RATES:
-                await rate_digit(conn, chat_id, int(callback_data.split()[1]), msg_id, callback_data.split()[0])
-                run_next = {str(chat_id): 'run_next'}
-            if callback_data.split()[0] == UNLIKE:
-                await unlike(conn, chat_id, int(callback_data.split()[1]), msg_id)
-            if callback_data.split()[0] == UNDISLIKE:
-                await undislike(conn, chat_id, int(callback_data.split()[1]), msg_id)
-            if callback_data.split()[0] == UNRATE:
-                await unrate(conn, chat_id, int(callback_data.split()[1]), msg_id)
-            if callback_data.split()[0] == DONT_RATE:
-                await dont_rate(conn, chat_id, int(callback_data.split()[1]), msg_id)
+            if call_action == LIKE:
+                await like(conn, chat_id, int(work_to_handle), msg_id)
+                # check if the interaction is with the last card in the chat
+                if cache[data_to_get] == int(work_to_handle):
+                    run_next = {str(chat_id): 'run_next'}
+            if call_action == DISLIKE:
+                await dislike(conn, chat_id, int(work_to_handle), msg_id)
+                # check if the interaction is with the last card in the chat
+                if cache[data_to_get] == int(work_to_handle):
+                    run_next = {str(chat_id): 'run_next'}
+            if call_action == RATE:
+                await rate(conn, chat_id, work_to_handle, msg_id)
+            if call_action in RATES:
+                await rate_digit(conn, chat_id, int(work_to_handle), msg_id, call_action)
+                # check if the interaction is with the last card in the chat
+                if cache[data_to_get] == int(work_to_handle):
+                    run_next = {str(chat_id): 'run_next'}
+            if call_action == UNLIKE:
+                await unlike(conn, chat_id, int(work_to_handle), msg_id)
+            if call_action == UNDISLIKE:
+                await undislike(conn, chat_id, int(work_to_handle), msg_id)
+            if call_action == UNRATE:
+                await unrate(conn, chat_id, int(work_to_handle), msg_id)
+            if call_action == DONT_RATE:
+                await dont_rate(conn, chat_id, int(work_to_handle), msg_id)
 
         return run_next
 
