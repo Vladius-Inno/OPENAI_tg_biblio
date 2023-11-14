@@ -77,7 +77,7 @@ class TelegramInt:
         response = requests.get(api_url, params=params)
         response.raise_for_status()
         data = response.json()
-        print(data)
+        print('Subscription data: ', data)
         if response.status_code == 200 and data['ok']:
             # Check if the user is a member of the channel
             return data['result']['status'] in ['member', 'creator', 'admin']
@@ -122,10 +122,15 @@ class TelegramInt:
             'reply_markup': reply_markup
         }
         # print('Editing', payload)
-        response = requests.post(url, json=payload, timeout=20)
-        response.raise_for_status()
-        print("Edited the markup in message in TG", response)
-        return response.json()
+        try:
+            response = requests.post(url, json=payload, timeout=20)
+        except Exception as e:
+            print(f'Got the markup problem - {e}')
+            response = None
+            # response.raise_for_status()
+        if response:
+            print("Edited the markup in message in TG", response)
+            return response.json()
 
     @handle_telegram_errors
     @retry(attempts=3, delay=3)
@@ -141,8 +146,8 @@ class TelegramInt:
         # result = data['result'][len(data['result'])-1]
         result = data['result']
         if data['result']:
-            print(data['result'])
-            print(len(data['result']), "messages")
+            print("The Update is:", data['result'])
+            print(f"We have got {len(data['result'])} messages in the update")
         return result
 
     @handle_telegram_errors

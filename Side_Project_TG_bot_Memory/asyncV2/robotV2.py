@@ -365,16 +365,22 @@ async def parse_updates(result, last_update_json):
         try:
             if result['callback_query']:
                 print("HERE IN UPDATES")
+                run_next = None
                 # handle like, rates which cause the next card to show, includes the type of card
-                run_next = await handle_callback_query(result['callback_query'])
+                try:
+                    run_next = await handle_callback_query(result['callback_query'])
+                except Exception as e:
+                    print('Couldn"t handle the callback, skipping')
                 last_update = str(int(result['update_id']))
                 # last_update_new['extras'].update(run_next)
-                last_update_new['extras'].append(run_next)
+                if run_next:
+                    last_update_new['extras'].append(run_next)
                 last_update_new['last_update'] = last_update
                 write_update(last_update_new)
+                print('Wrote down the update', last_update_new)
                 return run_next
         except Exception as e:
-            print(e)
+            print("Callback query BUG:", e)
 
         try:
             # Checking for new messages that did not come from chatGPT
@@ -395,7 +401,7 @@ async def parse_updates(result, last_update_json):
                 if chat_type == "channel":
                     pass
         except Exception as e:
-            print(e)
+            print('Messages NOT from a bot BUG', e)
 
     return
 
@@ -417,7 +423,7 @@ async def handle_private(result):
             return
 
         msg = result['message']['text']
-        print(chat_id, msg_id, msg)
+        print("Private message:", chat_id, msg_id, msg)
 
         # cached
         # a new user
@@ -583,7 +589,7 @@ async def handle_callback_query(callback_query):
     async with await connector._get_user_connection(chat_id) as conn:
 
         # the flag to load the next book
-        run_next = {}
+        run_next = None
 
         call_action = callback_data.split()[0]
         work_to_handle = callback_data.split()[1]

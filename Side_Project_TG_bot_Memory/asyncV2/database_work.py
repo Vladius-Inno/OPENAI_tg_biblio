@@ -85,8 +85,8 @@ class DatabaseConnector:
 
     @handle_database_errors
     async def query_db(self, conn, sql, *params, method='fetchall'):
-        print(sql, params)
-        print(conn)
+        print("SQL:", sql, params)
+        # print(conn)
         result = await conn.fetch(sql, *params)
         print('Fetched')
         if method == 'fetchall':
@@ -151,7 +151,7 @@ class DatabaseInteractor:
             gpt_role = await self.connector.db_query(conn, sql, chat_id, method='fetchone')
             gpt_role = gpt_role.get('gpt_role')
         except Exception as e:
-            print(e)
+            print("Role bug:", e)
             gpt_role = DEFAULT_ROLE
         return gpt_role
 
@@ -325,7 +325,7 @@ class DatabaseInteractor:
         result = await self.connector.db_query(conn, sql, work_id, method='fetchone')
         if result:
             data_json = json.loads(result['work_json'])
-            print(data_json)
+            # print(data_json)
         else:
             return None
         return fantlab.Work(data_json)
@@ -431,12 +431,16 @@ class FantInteractor(DatabaseInteractor):
             return
 
         # if one is shown the work, likes or dislikes the work
-        sql = f"INSERT INTO {self.user_actions_table} (chat_id, w_id, action_type) VALUES ($1, $2, $3" \
-        f") ON CONFLICT (chat_id, w_id) DO UPDATE SET action_type = $3 WHERE " \
-        f"{self.user_actions_table}.action_type = 'no_pref'" \
-        f" AND {self.user_actions_table}.rate IS NULL"
-        await self.connector.db_query(conn, sql, chat_id, work_id, pref)
-        print(f'User {chat_id} preference updated (general)')
+        try:
+            sql = f"INSERT INTO {self.user_actions_table} (chat_id, w_id, action_type) VALUES ($1, $2, $3" \
+            f") ON CONFLICT (chat_id, w_id) DO UPDATE SET action_type = $3 WHERE " \
+            f"{self.user_actions_table}.action_type = 'no_pref'" \
+            f" AND {self.user_actions_table}.rate IS NULL"
+            await self.connector.db_query(conn, sql, chat_id, work_id, pref)
+            print(f'User {chat_id} preference updated (general)')
+        except Exception as e:
+            print("No update required in the user prefs (general")
+            return
         return
 
     @handle_database_errors
