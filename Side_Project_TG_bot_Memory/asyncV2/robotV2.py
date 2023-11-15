@@ -1,5 +1,7 @@
 # version 0.0.1, working on news
 import json
+import random
+
 import requests
 import sys
 import asyncio
@@ -18,7 +20,8 @@ from constants import BOT_TOKEN, BOT_NAME, FILENAME, RATE_1, RATE_2, RATE_3, RAT
     SUBSCRIPTION_COMMAND, CHANNEL_NAME, CHANNEL_NAME_RUS, TEST, DAY_LIMIT_PRIVATE, DAY_LIMIT_SUBSCRIPTION, \
     CONTEXT_DEPTH, MAX_TOKENS, REFERRAL_BONUS, MONTH_SUBSCRIPTION_PRICE, CHECK_MARK, LITERATURE_EXPERT_ROLE, \
     LITERATURE_EXPERT_ROLE_RUS, DEFAULT_ROLE, DEFAULT_ROLE_RUS, ROLES, ROLES_ZIP, LIKE, DISLIKE, RATE, CALLBACKS, \
-    RANDOM_BOOK_COMMAND, RECOMMEND_COMMAND, RECOMMENDATION_EXIT_COMMAND, PREFERENCES_COMMAND, RECOMMEND_BOOK
+    RANDOM_BOOK_COMMAND, RECOMMEND_COMMAND, RECOMMENDATION_EXIT_COMMAND, PREFERENCES_COMMAND, RECOMMEND_BOOK, \
+    WAIT_MESSAGES
 
 if sys.stdout.encoding != 'utf-8':
     sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
@@ -71,9 +74,18 @@ async def store_book(conn, work, chat_id):
         else:
             print(f'No similars for {work.id}')
 
+#
+# async def send_waiting_message(chat_id):
+#     return await telegram.send_text(random.choice(WAIT_MESSAGES), chat_id)
+
 
 async def handle_random_book(chat_id):
     async with await connector._get_user_connection(chat_id) as conn:
+
+        # send a waiting message, and get its id to delete later
+        x = await telegram.send_text(random.choice(WAIT_MESSAGES), chat_id)
+        if x:
+            waiting_message_id = x['result']['message_id']
 
         # use simple parse fantlab page to get a work id
         random_work_id = await random_parsed()
@@ -85,7 +97,10 @@ async def handle_random_book(chat_id):
             work = await service.get_random_work(image_on=False)
 
         # send the book to TG
-        await telegram.send_work(work, chat_id, set_keyboard_rate_work(work.id))
+
+        await telegram.send_work(work, chat_id, reply_markup=set_keyboard_rate_work(work.id), type_w='random')
+        if x:
+            await telegram.delete_message(chat_id, waiting_message_id)
 
         # store in cache the id if the last shown work
         last_work_cache = str(chat_id) + '_last_work'
@@ -103,6 +118,11 @@ async def handle_random_book(chat_id):
 async def handle_recommend_book(chat_id):
     async with await connector._get_user_connection(chat_id) as conn:
 
+        # send a waiting message, and get its id to delete later
+        x = await telegram.send_text(random.choice(WAIT_MESSAGES), chat_id)
+        if x:
+            waiting_message_id = x['result']['message_id']
+
         # get a recommendation
         recommend_work_id = await db_int.get_recommendation(conn, chat_id)
 
@@ -117,7 +137,10 @@ async def handle_recommend_book(chat_id):
             else:
                 print(f"Got the {recommend_work_id} from the DB")
             # send the book to TG
-            await telegram.send_work(work, chat_id, set_keyboard_rate_work(work.id))
+            await telegram.send_work(work, chat_id, reply_markup=set_keyboard_rate_work(work.id), type_w='recommend')
+
+            if x:
+                await telegram.delete_message(chat_id, waiting_message_id)
             # store in cache the id if the last shown work
             last_work_cache = str(chat_id) + '_last_work'
             cache[last_work_cache] = {'work_id': work.id, 'show_type': 'recommendation'}

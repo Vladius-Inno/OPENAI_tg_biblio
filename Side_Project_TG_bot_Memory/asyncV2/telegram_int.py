@@ -53,6 +53,7 @@ class TelegramInt:
         payload = {
             'chat_id': chat_id,
             'caption': message,
+            'parse_mode': 'HTML',
             'photo': photo
         }
         # Convert the keyboard dictionary to JSON string and add to the payload
@@ -67,6 +68,20 @@ class TelegramInt:
         response.raise_for_status()  # Raises an exception for non-2xx status codes
         print("TG sent the photo", response)
         return response.json()
+
+    @handle_telegram_errors
+    @retry(attempts=3)
+    async def delete_message(self, user_id, msg_id):
+        api_url = self.base_url + self.bot_token + '/deleteMessage'
+
+        payload = {
+            'chat_id': user_id,
+            'message_id': msg_id
+        }
+        response = requests.get(api_url, json=payload, timeout=20)
+        response.raise_for_status()
+        return response
+
 
     @handle_telegram_errors
     @retry(attempts=3)
@@ -172,30 +187,38 @@ class TelegramInt:
 
     @handle_telegram_errors
     @retry(attempts=3)
-    async def send_work(self, work, chat_id, reply_markup=None):
+    async def send_work(self, work, chat_id, reply_markup=None, reply_msg_id=None, type_w=None):
 
         work_name = work.work_name or work.work_name_orig
         work_year = work.work_year or "год н/д"
-        message = f'{work.work_type.capitalize()} "{work_name}", {work_year}\nАвтор - {work.author}\n' \
-                  f'Рейтинг - {work.rating} ({work.voters})\n\n{work.desc}'
-        if len(message) > 999:
-            message = message[:995] + " ..."
+        work_desc = work.desc or "Описание недоступно"
+        if type_w == 'random':
+            type_w = 'Случайная'
+        elif type_w == 'recommend':
+            type_w = "Рекомендация"
+        else:
+            type_w = ""
 
-        # # add the work id to the callbacks
-        # for elem in reply_markup['inline_keyboard'][0]:
-        #     elem['callback_data'] += str(work.id)
-        #     # print(key, reply_markup[key])
+        message = f'<code>{type_w}</code>\n{work.work_type.capitalize()} "{work_name}", {work_year}\nАвтор - {work.author}\n' \
+                  f'Рейтинг - {work.rating} ({work.voters})\n\n{work_desc}'
+        if len(message) > 1012:
+            message = message[:1008] + " ..."
 
         photo_url = work.image
+
         if photo_url:
+
             await self.send_photo(photo_url, message, chat_id, reply_markup)
             return
 
         payload = {
             'chat_id': chat_id,
+            'parse_mode': 'HTML',
             'text': message,
         }
         # Convert the keyboard dictionary to JSON string and add to the payload
+
+
         if reply_markup:
             reply_markup = json.dumps(reply_markup)
             payload['reply_markup'] = reply_markup
