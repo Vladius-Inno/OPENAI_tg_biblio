@@ -649,6 +649,7 @@ async def like(conn, chat_id, work_id, msg_id):
         ]]
     }
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
+    await db_int.update_pref_score(conn, chat_id, work_id, 'like')
 
 
 async def unlike(conn, chat_id, work_id, msg_id):
@@ -669,7 +670,6 @@ async def unrate(conn, chat_id, work_id, msg_id):
 
     # asyncio.create_task(update_user_prefs(chat_id, work_id, 'unrate'))
     await update_user_prefs(chat_id, work_id, 'unrate')
-
 
     # change the inline-keyboard
     keyboard = set_keyboard_rate_work(work_id)
@@ -703,6 +703,7 @@ async def dislike(conn, chat_id, work_id, msg_id):
         ]]
     }
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
+    await db_int.update_pref_score(conn, chat_id, work_id, 'dislike')
 
 
 async def rate(conn, chat_id, work_id, msg_id):
@@ -756,6 +757,7 @@ async def rate_digit(conn, chat_id, work_id, msg_id, rate_string):
         ]]
     }
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
+    await db_int.update_pref_score(conn, chat_id, work_id, 'rate', rate_digit)
 
 
 async def add_new_user(user_id):

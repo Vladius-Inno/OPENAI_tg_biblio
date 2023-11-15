@@ -330,6 +330,85 @@ class DatabaseInteractor:
             return None
         return fantlab.Work(data_json)
 
+    async def update_pref_score(self, conn, chat_id, work_id, pref, rate_digit=None):
+
+        if pref == 'like':
+            sql = """
+                -- Get the corresponding genres for the liked book
+                UPDATE user_prefs
+                SET pref_score = CASE
+                    WHEN pref_score < 1 THEN pref_score + 0.05 * (1 - ABS(pref_score))
+                    ELSE pref_score
+                END
+                FROM work_genres
+                WHERE user_prefs.wg_id = work_genres.genre_id
+                    AND user_prefs.chat_id = $1
+                    AND work_genres.w_id = $2
+            """
+            try:
+                await self.connector.db_query(conn, sql, chat_id, work_id, method='execute')
+                print('Prefs were increased')
+            except Exception as e:
+                print('Could not update user prefs', e)
+
+        elif pref == 'dislike':
+            sql = """
+                -- Get the corresponding genres for the disliked book
+                UPDATE user_prefs
+                SET pref_score = CASE
+                    WHEN pref_score < 1 THEN pref_score - 0.05 * (1 - ABS(pref_score))
+                    ELSE pref_score
+                END
+                FROM work_genres
+                WHERE user_prefs.wg_id = work_genres.genre_id
+                    AND user_prefs.chat_id = $1
+                    AND work_genres.w_id = $2
+            """
+            try:
+                await self.connector.db_query(conn, sql, chat_id, work_id, method='execute')
+                print('Prefs were decreased')
+            except Exception as e:
+                print('Could not update user prefs', e)
+
+        elif pref == 'rate':
+            sql = """
+                -- Get the corresponding genres for the rated book
+                UPDATE user_prefs
+                SET pref_score = CASE
+                    WHEN pref_score < 1 THEN pref_score + 0.02 * (-5.5 + $3) * (1 - ABS(pref_score))
+                    ELSE pref_score
+                END
+                FROM work_genres
+                WHERE user_prefs.wg_id = work_genres.genre_id
+                    AND user_prefs.chat_id = $1
+                    AND work_genres.w_id = $2
+            """
+            try:
+                await self.connector.db_query(conn, sql, chat_id, work_id, rate_digit, method='execute')
+                print('Prefs were changed by the rate')
+            except Exception as e:
+                print('Could not update user prefs', e)
+
+        else:
+            return
+        return
+
+    async def get_best_prefs(self, conn, chat_id):
+        sql = """
+            SELECT
+                user_prefs.chat_id,
+                genre.name,
+                user_prefs.pref_score
+            FROM
+                user_prefs
+            JOIN genre ON user_prefs.wg_id = genre.wg_id
+            WHERE
+                user_prefs.chat_id = $1
+            ORDER BY pref_score DESC
+        """
+        result = await self.connector.db_query(conn, sql, chat_id, method='fetchall')
+        print('\n'.join([f"{a['name']} - " + "{:.3f}".format(a["pref_score"]) for a in result]))
+
 
 class FantInteractor(DatabaseInteractor):
     tables_default = ["genre"]  # Replace with your table names
@@ -439,34 +518,35 @@ class FantInteractor(DatabaseInteractor):
             await self.connector.db_query(conn, sql, chat_id, work_id, pref)
             print(f'User {chat_id} preference updated (general)')
         except Exception as e:
-            print("No update required in the user prefs (general")
+            print("No update required in the user prefs (general)", e)
             return
         return
 
     @handle_database_errors
     async def update_recommendations(self, conn, chat_id, work_id, pref, rate_digit):
+        # TODO create a reset process for actions "unlike" and so on
         sql_code = """
-INSERT INTO recommended_books (chat_id, work_id, score)
-SELECT
-    $2 AS chat_id,
-    similar_works.w_id AS work_id,
-    CASE
-        WHEN ua.action_type = 'like' THEN 0.5
-        WHEN ua.action_type = 'rate' THEN ua.rate::FLOAT / 10.0
-        WHEN ua.action_type = 'dislike' THEN -0.2
-        ELSE 0.0
-    END AS score
-FROM
-    user_actions ua
-JOIN
-    works w ON ua.w_id = w.w_id
-JOIN
-    unnest(w.similars) similar_works(w_id) ON true
-WHERE
-    ua.w_id = $1
-ON CONFLICT (chat_id, work_id) DO UPDATE
-SET
-    score = EXCLUDED.score;
+            INSERT INTO recommended_books (chat_id, work_id, score)
+            SELECT
+                $2 AS chat_id,
+                similar_works.w_id AS work_id,
+                CASE
+                    WHEN ua.action_type = 'like' THEN 0.6
+                    WHEN ua.action_type = 'rate' THEN ua.rate::FLOAT / 10.0
+                    WHEN ua.action_type = 'dislike' THEN 0.2
+                    ELSE 0.0
+                END AS score
+            FROM
+                user_actions ua
+            JOIN
+                works w ON ua.w_id = w.w_id
+            JOIN
+                unnest(w.similars) similar_works(w_id) ON true
+            WHERE
+                ua.w_id = $1
+            ON CONFLICT (chat_id, work_id) DO UPDATE
+            SET
+                score = EXCLUDED.score;
     """
         await self.connector.db_query(conn, sql_code, work_id, chat_id, method='execute')
         print(f"Recommendations for {chat_id} about the book {work_id} updated successfully!")
@@ -507,29 +587,29 @@ def update_similars():
             try:
                 # Execute your SQL query
                 cur.execute("""
-insert into recommended_books (chat_id, work_id, score)
-select
-ua.chat_id,
-coalesce(bs.similars, ua.w_id) as work_id,
-case
-when ua.action_type = 'like' then 0.5
-when ua.action_type = 'rate' then
-            CASE
-                WHEN ua.rate >= 6 THEN ua.rate::float / 10.0
-                ELSE NULL -- Handle other cases as needed
-            END
-else null
-end as score
-from user_actions ua
-join
-works b on ua.w_id = b.w_id
-left join
-unnest(b.similars) bs(similars)
-on
-true
-where
-ua.action_type in ('like', 'rate')
-ON CONFLICT (chat_id, work_id) DO NOTHING;
+                    insert into recommended_books (chat_id, work_id, score)
+                    select
+                    ua.chat_id,
+                    coalesce(bs.similars, ua.w_id) as work_id,
+                    case
+                    when ua.action_type = 'like' then 0.6
+                    when ua.action_type = 'rate' then
+                                CASE
+                                    WHEN ua.rate >= 6 THEN ua.rate::float / 10.0
+                                    ELSE NULL -- Handle other cases as needed
+                                END
+                    else null
+                    end as score
+                    from user_actions ua
+                    join
+                    works b on ua.w_id = b.w_id
+                    left join
+                    unnest(b.similars) bs(similars)
+                    on
+                    true
+                    where
+                    ua.action_type in ('like', 'rate')
+                    ON CONFLICT (chat_id, work_id) DO NOTHING;
 """)
 
                 # Fetch the results if needed
@@ -551,6 +631,12 @@ async def work_printer():
     print(type(work))
 
 
+async def prefs_printer():
+    await fant_db._create_db_pool()
+    async with await fant_db._get_user_connection(163905035) as conn:
+        await connector.get_best_prefs(conn, 163905035)
+
+
 if __name__ == '__main__':
     # mess_db = DatabaseConnector('messages', test=True)
     # cursor = mess_db.get_cursor()
@@ -562,7 +648,9 @@ if __name__ == '__main__':
 
     connector = DatabaseInteractor(fant_db)
 
-    asyncio.run(work_printer())
+    # asyncio.run(work_printer())
+    asyncio.run(prefs_printer())
+
 
     # Executor for the options table
     # opt_ext = OptionsInteractor(fant_db, test=True)
