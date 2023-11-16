@@ -181,8 +181,9 @@ class DatabaseInteractor:
     @handle_database_errors
     async def insert_message(self, conn, chat_id, text, role, subscription_status, timestamp):
         sql = f"INSERT INTO {self.tables[1]} (timestamp, chat_id, role, message, subscription_status) VALUES ($1, $2, $3, " \
-              f"$4, $5) "
+              f"$4, $5)"
         await self.connector.db_query(conn, sql, timestamp, chat_id, role, text, subscription_status, method='execute')
+        print(f"Message {text} inserted into DB")
 
     @handle_database_errors
     async def get_last_messages(self, conn, chat_id, amount):
@@ -486,6 +487,23 @@ class FantInteractor(DatabaseInteractor):
         sql = f"UPDATE {self.table} SET similars = $1 WHERE w_id = $2"
         await self.connector.db_query(conn, sql, similars, work_id, method='execute')
         return "ok"
+
+    @handle_database_errors
+    async def update_relatives(self, conn, work_id, parent_cycles, parent_digests, children):
+        if parent_cycles:
+            if not any(parent_cycles):
+                parent_cycles = None
+            else:
+                parent_cycles = json.dumps(parent_cycles)
+        if not parent_digests:
+            parent_digests = None
+        if not children:
+            children = None
+        sql = f"UPDATE {self.table} SET parent_cycles = $2::JSONB, digests = $3, children = $4 WHERE w_id = $1"
+        await self.connector.db_query(conn, sql, work_id, parent_cycles, parent_digests, children, method='execute')
+        print(f'Relatives for {work_id} updated')
+        return "ok"
+
 
     @handle_database_errors
     async def update_user_prefs(self, conn, chat_id, work_id, pref, rate=None):

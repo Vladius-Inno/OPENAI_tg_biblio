@@ -192,6 +192,7 @@ class TelegramInt:
         work_name = work.work_name or work.work_name_orig
         work_year = work.work_year or "год н/д"
         work_desc = work.desc or "Описание недоступно"
+        work_type = work.work_type
         if type_w == 'random':
             type_w = 'Случайная'
         elif type_w == 'recommend':

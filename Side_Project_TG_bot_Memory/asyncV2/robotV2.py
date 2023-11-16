@@ -74,6 +74,30 @@ async def store_book(conn, work, chat_id):
         else:
             print(f'No similars for {work.id}')
 
+        parents = await ext_work.get_parents()
+        parent_cycle, digests_cycle = None, None
+
+        if parents:
+            if parents.get('cycles'):
+                cycles = parents.get('cycles')
+                parent_cycle = [[parent['work_id'] for parent in parent_cycle] for parent_cycle in cycles]
+                print('Parents cycles:', parent_cycle)
+
+            if parents.get('digests'):
+                digests = parents.get('digests')
+                digests_cycle = [digest['work_id'] for digest in digests]
+                print('Digests:', digests_cycle)
+
+        children = await ext_work.get_children()
+        children_cycle = None
+        if children:
+            children_cycle = [child['work_id'] for child in children]
+            print('Children:', children_cycle)
+        try:
+            await fant_ext.update_relatives(conn, ext_work.id, parent_cycle, digests_cycle, children_cycle)
+        except Exception as e:
+            print('Relatives are not updated', e)
+
 #
 # async def send_waiting_message(chat_id):
 #     return await telegram.send_text(random.choice(WAIT_MESSAGES), chat_id)
@@ -565,6 +589,7 @@ async def handle_private(result):
 
                 # get the last n messages from the db to feed them to the gpt
                 messages = await get_last_messages(conn, chat_id, CONTEXT_DEPTH)
+                print('got last messages:', messages)
                 # add the last received message to the db
                 await add_private_message_to_db(conn, chat_id, msg, 'user', is_subscription_valid)
                 # send the last message and the previous historical messages from the db to the GPT

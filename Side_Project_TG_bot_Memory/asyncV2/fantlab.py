@@ -8,7 +8,6 @@ import database_work
 from retrying_async import retry
 import datetime
 
-
 FANTLAB_API_ADDRESS = 'https://api.fantlab.ru/'
 FANTLAB_ADDRESS = 'https://fantlab.ru'
 
@@ -148,7 +147,7 @@ class ExtendedWork(Work):
             return tuples  # work.id, genre_id, genre_weight, genre_voters
         return None
 
-    def get_parents(self):
+    async def get_parents(self):
         if self.data.get('parents'):
             res = {'cycles': None, 'digests': None}
             cycle_list = []
@@ -156,44 +155,82 @@ class ExtendedWork(Work):
             parents = self.data['parents']
             if parents.get('cycles'):
                 cycles = parents['cycles']
-                if cycles:
-                    for subcycle in cycles:
-                        temp = []
-                        for el in subcycle:
-                            if el.get('work_id'):
-                                temp.append(el['work_id'])
-                        cycle_list.append(temp)
+                for subcycle in cycles:
+                    temp = []
+                    for el in subcycle:
+                        if el.get('work_id'):
+                            voters = None
+                            author = el.get('authors')
+                            if author:
+                                author = author[0]['name']
+                            rating = el.get('rating')
+                            if rating:
+                                rating = rating.get('rating')
+                                voters = rating.get('voters')
+                            work_id = el.get('work_id')
+                            work_name = el.get('work_name')
+                            work_type = el.get('work_type')
+                            work_year = el.get('work_year')
+                            cycles_dict = {'work_id': work_id,
+                                           'work_type': work_type,
+                                           'work_name': work_name,
+                                           'author': author,
+                                           'rating': rating,
+                                           'voters': voters,
+                                           'work_year': work_year
+                                           }
+                            temp.append(cycles_dict)  # list of dicts
+                    cycle_list.append(temp)
             if parents.get('digest'):
                 digests = parents['digest']
-                if digests:
-                    for subdigest in digests:
-                        for el in subdigest:
-                            if el.get('work_id'):
-                                digest_list.append(el['work_id'])
+                for subdigest in digests:
+                    for el in subdigest:
+                        if el.get('work_id'):
+                            work_id = el.get('work_id')
+                            work_name = el.get('work_name')
+                            work_type = el.get('work_type')
+                            work_year = el.get('work_year')
+                            digest_dict = {'work_id': work_id,
+                                           'work_type': work_type,
+                                           'work_name': work_name,
+                                           'work_year': work_year
+                                           }
+                            digest_list.append(digest_dict)
             res['cycles'] = cycle_list
-            res['digests'] =digest_list
+            res['digests'] = digest_list
             return res  # dict of parents {'cycles': [[6663, 5835]], 'digests': [530492]}, 6662 is a high cycle,
             # 5835 is a subcycle
         return None
 
-    def get_children(self):
-        if self.data.get('classificatory'):
-            chars = self.data['classificatory']['genre_group']
-            tuples = []
-            for char in chars:
-                if char.get('genre'):
-                    for genre in char['genre']:
-                        tuples.append((self.id, 'wg' + str(genre['genre_id']), genre['percent'], genre['votes']))
-                        if genre.get('genre'):
-                            for subgenre in genre['genre']:
-                                tuples.append(
-                                    (self.id, 'wg' + str(subgenre['genre_id']), subgenre['percent'], subgenre['votes']))
-                                if subgenre.get('genre'):
-                                    for subsubgenre in subgenre['genre']:
-                                        tuples.append((self.id, 'wg' + str(subsubgenre['genre_id']),
-                                                       subsubgenre['percent'], subsubgenre['votes']))
-            return tuples  # work.id, genre_id, genre_weight, genre_voters
-        return None
+    async def get_children(self):
+        res = []
+
+        if self.data.get('children'):
+            children = self.data.get('children')
+            for child in children:
+                if child:
+                    voters = None
+                    author = child.get('authors')
+                    if author:
+                        author = author[0]['name']
+                    rating = child.get('rating')
+                    if rating:
+                        voters = rating.get('voters')
+                        rating = rating.get('rating')
+                    work_id = child.get('work_id')
+                    work_name = child.get('work_name')
+                    work_type = child.get('work_type')
+                    work_year = child.get('work_year')
+                    child_dict = {'work_id': work_id,
+                                  'work_type': work_type,
+                                  'work_name': work_name,
+                                  'author': author,
+                                  'rating': rating,
+                                  'voters': voters,
+                                  'work_year': work_year
+                                  }
+                    res.append(child_dict)  # list of dicts
+        return res
 
 
 class FantlabApi:
@@ -329,40 +366,58 @@ async def book_list():
     with open('book_list.txt', 'a') as f:
         for x in range(5437, 5500):
             if await service.work_exists(x):
-                f.write(str(x)+"\n")
+                f.write(str(x) + "\n")
                 print(f'Added the {x} to file')
     print('Finished the script')
 
 
-async def relatives():
-    connector.db_pool = await connector._create_db_pool()
-    print(datetime.datetime.now().isoformat())
+async def relatives(chat_id=163905035):
+    await fant_ext._create_db_pool()
+    async with await fant_ext._get_user_connection(163905035) as conn:
+        print(datetime.datetime.now().isoformat())
 
-    for idx in range(189, 193):
-        try:
-            work = await service.get_work(idx)
-            if work:
-                work_ext = await service.get_extended_work(idx)
-                print(f"Got the work {idx} - {work.title}")
+        sql = f"SELECT w_id FROM works"
+        lis = await fant_ext.query_db(conn, sql)
+        lis = [l[0] for l in lis]
+        # index = lis.index(3602)
+        # print(index)
 
-                parents = work_ext.get_parents()
-                if parents:
-                    print(parents)
-                # children = work_ext.get_children()  # 873
-            #     if parents:
-            #         await fant_ext.update_parents(idx, parents)
-            #         print(f"Updated the parents for {idx}")
-            #     else:
-            #         print(f'No parents for {idx}')
-            # if children:
-            #     await fant_ext.update_children(idx, children)
-            #     print(f"Updated the children for {idx}")
-            # else:
-            #     print(f'No children for {idx}')
+        for idx in lis[1000:2000]:  # 189 3642
+            try:
+                work = await service.get_work(idx)
+                parent_cycle, digests_cycle, children_cycle = None, None, None
+                parents, children = None, None
 
-        except Exception as e:
-            print(f'No work {idx}, exeption: {e}')
-            print("+======================================")
+                if work:
+                    work_ext = await service.get_extended_work(idx)
+                    print(f"Got the work {idx} - {work_ext.title}")
+
+                    parents = await work_ext.get_parents()
+                    if parents:
+                        if parents.get('cycles'):
+                            cycles = parents.get('cycles')
+                            parent_cycle = [[parent['work_id'] for parent in parent_cycle] for parent_cycle in cycles]
+                            print('Parents cycles:', parent_cycle)
+
+                        if parents.get('digests'):
+                            digests = parents.get('digests')
+                            digests_cycle = [digest['work_id'] for digest in digests]
+                            print('Digests:', digests_cycle)
+
+                    children = await work_ext.get_children()  # 873
+                    if children:
+                        children_cycle = [child['work_id'] for child in children]
+                        print('Children:', children_cycle)
+                    try:
+                        await fant_int.update_relatives(conn, idx, parent_cycle, digests_cycle, children_cycle)
+                        print("+======================================")
+
+                    except Exception as e:
+                        print('Relatives are not updated', e)
+
+            except Exception as e:
+                print(f'No work {idx}, exeption: {e}')
+                print("+======================================")
     print('Process finished')
     print(datetime.datetime.now().isoformat())
 
@@ -387,7 +442,7 @@ async def similars(chat_id=163905035):
 
 
 async def checker(chat_id=163905035):
-    await connector._create_db_pool()
+    await fant_ext._create_db_pool()
     print(datetime.datetime.now().isoformat())
     # 3159 no genres
     # 4698 no work
@@ -397,7 +452,7 @@ async def checker(chat_id=163905035):
             if work:
                 print(f"Got the work {idx} - {work.title}")
 
-                await fant_ext.store_work(chat_id, work)
+                await connector.store_work(chat_id, work)
                 work_ext = await service.get_extended_work(idx)
                 if work_ext:
                     print(f'Got extended work {idx}')
@@ -429,10 +484,14 @@ if __name__ == '__main__':
     # Initialize DatabaseConnector with the Fantlabapiclient
     service = BookDatabase(api_connect)
 
-    connector = database_work.DatabaseConnector('fantlab')
+    # update_similars()
+
+    fant_ext = database_work.DatabaseConnector('fantlab', True)
+
+    connector = database_work.DatabaseInteractor(fant_ext)
 
     # Interactor with the fantlab database, main class for requests
-    fant_ext = database_work.FantInteractor(connector)
+    fant_int = database_work.FantInteractor(fant_ext)
 
     # asyncio.run(checker())
     # asyncio.run(similars())
