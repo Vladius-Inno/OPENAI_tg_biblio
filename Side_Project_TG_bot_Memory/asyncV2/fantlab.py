@@ -168,7 +168,7 @@ class ExtendedWork(Work):
                                 rating = rating.get('rating')
                                 voters = rating.get('voters')
                             work_id = el.get('work_id')
-                            work_name = el.get('work_name')
+                            work_name = el.get('work_name') or el.get('work_name_orig')
                             work_type = el.get('work_type')
                             work_year = el.get('work_year')
                             cycles_dict = {'work_id': work_id,
@@ -218,7 +218,7 @@ class ExtendedWork(Work):
                         voters = rating.get('voters')
                         rating = rating.get('rating')
                     work_id = child.get('work_id')
-                    work_name = child.get('work_name')
+                    work_name = child.get('work_name') or child.get('work_name_orig')
                     work_type = child.get('work_type')
                     work_year = child.get('work_year')
                     child_dict = {'work_id': work_id,
@@ -382,7 +382,7 @@ async def relatives(chat_id=163905035):
         # index = lis.index(3602)
         # print(index)
 
-        for idx in lis[1000:2000]:  # 189 3642
+        for idx in lis[5000:]:  # 189 3642
             try:
                 work = await service.get_work(idx)
                 parent_cycle, digests_cycle, children_cycle = None, None, None

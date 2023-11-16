@@ -41,7 +41,7 @@ OPTIONS_DATABASE = 'options.db'
 TIME_DELTA = timedelta(hours=12)
 cache_dir = os.environ.get("CACHE_DIR", "default_cache_dir")
 
-WAIT_MESSAGES = ['Один момент!..', 'Так, думаю...', 'Капельку подождите', 'Надобно произвести расчётик']
+WAIT_MESSAGES = ['Один момент!..', 'Так, думаю...', 'Капельку подождите', 'Надобно произвести расчёт']
 
 # SBER_TOKEN_TEST = "401643678:TEST:266f8c81-0fc1-46ac-b57f-64a5fcc97616"
 # Номер карты	2200 0000 0000 0053
@@ -74,10 +74,12 @@ ROLES_ZIP = {ROLES[i]: ROLES_RUS[i] for i in range(len(ROLES))}
 LIKE = 'LIKE'
 DISLIKE = 'DISLIKE'
 RATE = 'RATE'
+RELATIVES = 'RELATIVES'
 DONT_RATE = "DONT_RATE"
 UNLIKE = 'UNLIKE'
 UNDISLIKE = 'UNDISLIKE'
 UNRATE = 'UNRATE'
+DESCRIPTION = 'DESCRIPTION'
 RATE_1 = 'RATE_1'
 RATE_2 = 'RATE_2'
 RATE_3 = 'RATE_3'
@@ -91,7 +93,7 @@ RATE_10 = 'RATE_10'
 RATES = [RATE_1, RATE_2, RATE_3, RATE_4, RATE_5, RATE_6, RATE_7, RATE_8, RATE_9, RATE_10]
 
 CALLBACKS = [LIKE, DISLIKE, RATE, RATE_1, RATE_2, RATE_3, RATE_4, RATE_5, RATE_6, RATE_7, RATE_8, RATE_9, RATE_10,
-             UNDISLIKE, UNLIKE, UNRATE]
+             UNDISLIKE, UNLIKE, UNRATE, RELATIVES, DESCRIPTION]
 
 RANDOM_BOOK_COMMAND = "*Случайная книга*"
 RECOMMEND_COMMAND = "*Рекомендации*"

@@ -21,7 +21,7 @@ from constants import BOT_TOKEN, BOT_NAME, FILENAME, RATE_1, RATE_2, RATE_3, RAT
     CONTEXT_DEPTH, MAX_TOKENS, REFERRAL_BONUS, MONTH_SUBSCRIPTION_PRICE, CHECK_MARK, LITERATURE_EXPERT_ROLE, \
     LITERATURE_EXPERT_ROLE_RUS, DEFAULT_ROLE, DEFAULT_ROLE_RUS, ROLES, ROLES_ZIP, LIKE, DISLIKE, RATE, CALLBACKS, \
     RANDOM_BOOK_COMMAND, RECOMMEND_COMMAND, RECOMMENDATION_EXIT_COMMAND, PREFERENCES_COMMAND, RECOMMEND_BOOK, \
-    WAIT_MESSAGES
+    WAIT_MESSAGES, RELATIVES, DESCRIPTION
 
 if sys.stdout.encoding != 'utf-8':
     sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
@@ -226,14 +226,24 @@ async def set_keyboard_roles(conn, chat_id):
     return keyboard_markup
 
 
-def set_keyboard_rate_work(work_id):
+def set_keyboard_rate_work(work_id, relatives_mode='off'):
+
     keyboard = {
         'inline_keyboard': [[
             {'text': "Like", 'callback_data': f'LIKE {work_id}'},  # Button with link to the channel
             {'text': "Dislike", 'callback_data': f'DISLIKE {work_id}'},
             {'text': "Rate", 'callback_data': f'RATE {work_id}'}
-        ]]
+        ],
+            [
+                {'text': "Связи", 'callback_data': f'RELATIVES {work_id}'}
+            ]
+        ]
     }
+
+    if relatives_mode == 'on':
+        keyboard['inline_keyboard'][1] = []
+        keyboard['inline_keyboard'][1] = []
+
     return keyboard
 
 
@@ -672,6 +682,10 @@ async def handle_callback_query(callback_query):
                 await unrate(conn, chat_id, int(work_to_handle), msg_id)
             if call_action == DONT_RATE:
                 await dont_rate(conn, chat_id, int(work_to_handle), msg_id)
+            if call_action == RELATIVES:
+                await relatives(conn, chat_id, int(work_to_handle), msg_id)
+            if call_action == DESCRIPTION:
+                await description(conn, chat_id, int(work_to_handle), msg_id)
         return run_next
 
 
@@ -806,6 +820,49 @@ async def rate_digit(conn, chat_id, work_id, msg_id, rate_string):
     }
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
     await db_int.update_pref_score(conn, chat_id, work_id, 'rate', rate_digit)
+
+
+async def relatives(conn, chat_id, work_id, msg_id):
+    print(f'{chat_id} wants to see relatives of {work_id}')
+    work_ext = await service.get_extended_work(work_id)
+    parents = await work_ext.get_parents()
+    parent_text = 'Нет циклов для этого произведения'
+    if parents['cycles']:
+        parent_text = "Входит в циклы:\n\n"
+        for x, parent_cycle in enumerate(parents['cycles']):
+            for y, parent in enumerate(parent_cycle):
+                if parent:
+                    work_type_text = f"{parent['work_type']}" if parent['work_type'] else ""
+                    work_name_text = f" '{parent['work_name']}'" if parent['work_name'] else ""
+                    work_author_text = f", {parent['author']}" if parent['author'] else ""
+                    work_rating_text = f", рейтинг: {parent['rating']}" if parent['rating'] else ""
+
+                    parent_text += f'{x+1}.{y+1} {work_type_text.capitalize()}{work_name_text}' \
+                                   f'{work_author_text}{work_rating_text}\n'
+
+    children = await work_ext.get_children()
+    children_text = ''
+    print(children)
+    if children:
+        children_text = "\n\nВ произведение входят:\n\n"
+        for x, child in enumerate(children):
+            if child['work_id']:
+                work_type_text = f"{child['work_type']}" if child['work_type'] else ""
+                work_name_text = f" '{child['work_name']}'" if child['work_name'] else ""
+                work_author_text = f", {child['author']}" if child['author'] else ""
+                work_rating_text = f", рейтинг: {child['rating']}" if child['rating'] else ""
+                children_text += f'{x+1}. {work_type_text.capitalize()}{work_name_text}' \
+                                 f'{work_author_text}{work_rating_text}\n'
+        if children_text == "\n\nВ произведение входят:\n\n":
+            children_text = ""
+
+    await telegram.edit_bot_message_markup(chat_id, msg_id, set_keyboard_rate_work(work_id, relatives_mode='on'))
+    await telegram.send_text(parent_text+children_text, chat_id, msg_id)
+
+
+async def description(conn, chat_id, work_id, msg_id):
+    print(f'{chat_id} wants to see description of {work_id}')
+    await telegram.edit_bot_message_markup(chat_id, msg_id, set_keyboard_rate_work(work_id, relatives_mode='off'))
 
 
 async def add_new_user(user_id):
