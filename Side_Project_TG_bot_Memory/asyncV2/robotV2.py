@@ -14,6 +14,7 @@ from group_handle import handle_supergroup
 from fant_random_simple import random_parsed
 import cached_funcs
 from cached_funcs import cache
+from telegram_bot_pagination import InlineKeyboardPaginator, InlineKeyboardButton
 from constants import BOT_TOKEN, BOT_NAME, FILENAME, RATE_1, RATE_2, RATE_3, RATE_4, RATE_5, RATE_6, RATE_7, RATE_8, \
     RATE_9, RATE_10, DONT_RATE,  RATES, UNLIKE, UNDISLIKE, UNRATE, \
     CLEAR_COMMAND, START_COMMAND, INFO_COMMAND, REFERRAL_COMMAND, HELP_COMMAND, RECOM_COMMAND, \
@@ -21,7 +22,7 @@ from constants import BOT_TOKEN, BOT_NAME, FILENAME, RATE_1, RATE_2, RATE_3, RAT
     CONTEXT_DEPTH, MAX_TOKENS, REFERRAL_BONUS, MONTH_SUBSCRIPTION_PRICE, CHECK_MARK, LITERATURE_EXPERT_ROLE, \
     LITERATURE_EXPERT_ROLE_RUS, DEFAULT_ROLE, DEFAULT_ROLE_RUS, ROLES, ROLES_ZIP, LIKE, DISLIKE, RATE, CALLBACKS, \
     RANDOM_BOOK_COMMAND, RECOMMEND_COMMAND, RECOMMENDATION_EXIT_COMMAND, PREFERENCES_COMMAND, RECOMMEND_BOOK, \
-    WAIT_MESSAGES, RELATIVES, DESCRIPTION
+    WAIT_MESSAGES, RELATIVES, DESCRIPTION, TRANSIT
 
 if sys.stdout.encoding != 'utf-8':
     sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
@@ -684,8 +685,10 @@ async def handle_callback_query(callback_query):
                 await dont_rate(conn, chat_id, int(work_to_handle), msg_id)
             if call_action == RELATIVES:
                 await relatives(conn, chat_id, int(work_to_handle), msg_id)
-            if call_action == DESCRIPTION:
-                await description(conn, chat_id, int(work_to_handle), msg_id)
+            # if call_action == DESCRIPTION:
+            #     await description(conn, chat_id, int(work_to_handle), msg_id)
+            if call_action == TRANSIT:
+                await transit_relative(conn, chat_id, int(work_to_handle), msg_id)
         return run_next
 
 
@@ -825,8 +828,10 @@ async def rate_digit(conn, chat_id, work_id, msg_id, rate_string):
 async def relatives(conn, chat_id, work_id, msg_id):
     print(f'{chat_id} wants to see relatives of {work_id}')
     work_ext = await service.get_extended_work(work_id)
+
     parents = await work_ext.get_parents()
-    parent_text = 'Нет циклов для этого произведения'
+    parent_text = ''
+    parent_callbacks = []
     if parents['cycles']:
         parent_text = "Входит в циклы:\n\n"
         for x, parent_cycle in enumerate(parents['cycles']):
@@ -836,28 +841,75 @@ async def relatives(conn, chat_id, work_id, msg_id):
                     work_name_text = f" '{parent['work_name']}'" if parent['work_name'] else ""
                     work_author_text = f", {parent['author']}" if parent['author'] else ""
                     work_rating_text = f", рейтинг: {parent['rating']}" if parent['rating'] else ""
+                    work_work_id = parent['work_id']
 
                     parent_text += f'{x+1}.{y+1} {work_type_text.capitalize()}{work_name_text}' \
                                    f'{work_author_text}{work_rating_text}\n'
+                    parent_callbacks.append({'text': f'{x+1}.{y+1}', 'callback_data': f'TRANSIT {work_work_id}'})
+                    parent_keyboard_markup = {'inline_keyboard': [parent_callbacks]}
 
     children = await work_ext.get_children()
     children_text = ''
-    print(children)
+    children_callbacks = []
     if children:
-        children_text = "\n\nВ произведение входят:\n\n"
+        children_text = "В произведение входят:\n\n"
         for x, child in enumerate(children):
             if child['work_id']:
                 work_type_text = f"{child['work_type']}" if child['work_type'] else ""
                 work_name_text = f" '{child['work_name']}'" if child['work_name'] else ""
                 work_author_text = f", {child['author']}" if child['author'] else ""
                 work_rating_text = f", рейтинг: {child['rating']}" if child['rating'] else ""
+                work_work_id = child['work_id']
+
                 children_text += f'{x+1}. {work_type_text.capitalize()}{work_name_text}' \
                                  f'{work_author_text}{work_rating_text}\n'
+                children_callbacks.append({'text': f'{x + 1}.', 'callback_data': f'TRANSIT {work_work_id}'})
+                children_keyboard_markup = {'inline_keyboard': [children_callbacks]}
         if children_text == "\n\nВ произведение входят:\n\n":
             children_text = ""
 
     await telegram.edit_bot_message_markup(chat_id, msg_id, set_keyboard_rate_work(work_id, relatives_mode='on'))
-    await telegram.send_text(parent_text+children_text, chat_id, msg_id)
+
+    try:
+
+        if parent_text:
+            await telegram.send_text(parent_text, chat_id, msg_id, reply_markup=parent_keyboard_markup)
+    except Exception as e:
+        print('Debug:', e)
+    if children_text:
+        await telegram.send_text(children_text, chat_id, msg_id, reply_markup=children_keyboard_markup)
+    if not any([parent_text, children_text]):
+        await telegram.send_text("Нет циклов для этого произведения", chat_id, msg_id)
+
+
+async def transit_relative(conn, chat_id, work_id, msg_id):
+    # async with await connector._get_user_connection(chat_id) as conn:
+
+    # send a waiting message, and get its id to delete later
+    x = await telegram.send_text(random.choice(WAIT_MESSAGES), chat_id)
+    if x:
+        waiting_message_id = x['result']['message_id']
+
+    # get the work by this id
+    work = await service.get_work(work_id)
+
+    # send the book to TG
+    await telegram.send_work(work, chat_id, reply_markup=set_keyboard_rate_work(work.id), type_w='relative')
+    if x:
+        await telegram.delete_message(chat_id, waiting_message_id)
+
+    # store in cache the id if the last shown work
+    last_work_cache = str(chat_id) + '_last_work'
+    cache[last_work_cache] = {'work_id': work.id, 'show_type': 'relative'}
+
+    # store the book in the DB
+    await store_book(conn, work, chat_id)
+
+    # update initial user prefs
+    await fant_ext.update_user_prefs(conn, chat_id, work.id, 'no_pref')
+
+    return work.id, chat_id
+
 
 
 async def description(conn, chat_id, work_id, msg_id):
