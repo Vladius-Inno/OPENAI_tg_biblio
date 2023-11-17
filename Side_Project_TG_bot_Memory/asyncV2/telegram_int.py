@@ -3,7 +3,7 @@
 import json
 import requests
 from retrying_async import retry
-from constants import MONTH_SUBSCRIPTION_PRICE, DAY_LIMIT_SUBSCRIPTION, PAY_TOKEN_TEST
+from constants import MONTH_SUBSCRIPTION_PRICE, DAY_LIMIT_SUBSCRIPTION, PAY_TOKEN_TEST, PAY_TOKEN
 from datetime import datetime, timedelta
 
 
@@ -277,7 +277,7 @@ class TelegramInt:
             "payload": "Month_subscription",
             "need_email": True,
             "send_email_to_provider": True,
-            "provider_token": PAY_TOKEN_TEST,  # CHANGE FOR PRIMARY
+            "provider_token": PAY_TOKEN,  # CHANGE FOR PRIMARY
             "provider_data": provider_data,
             "start_parameter": "The-Payment",
             "currency": "RUB",
