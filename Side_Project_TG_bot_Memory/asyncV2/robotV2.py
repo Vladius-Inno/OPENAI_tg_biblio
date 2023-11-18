@@ -918,6 +918,7 @@ async def relatives(conn, chat_id, work_id, msg_id, inline_markup):
         children_text = "В произведение входят:\n\n"
         for x, child in enumerate(children):
             if child['work_id']:
+                counter += 1
                 work_type_text = f"{child['work_type']}" if child['work_type'] else ""
                 work_name_text = f" '{child['work_name']}'" if child['work_name'] else ""
                 work_author_text = f", {child['author']}" if child['author'] else ""
@@ -932,7 +933,7 @@ async def relatives(conn, chat_id, work_id, msg_id, inline_markup):
                 children_callbacks[x // 9].append(
                     {'text': f'{x + 1}.', 'callback_data': f'TRANSIT {work_work_id}'})
                 # limit the amount of buttons and children
-                if counter > 39:
+                if counter > 47:
                     children_text += '\nСлишком много позиций, выведен неполный список!'
                     break
 
