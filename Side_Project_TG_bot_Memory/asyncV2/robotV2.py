@@ -902,6 +902,8 @@ async def relatives(conn, chat_id, work_id, msg_id, inline_markup):
 
                     parent_text += f'{x+1}.{y+1} {work_type_text.capitalize()}{work_name_text}' \
                                    f'{work_author_text}{work_rating_text}\n'
+
+                    # make the rows for the inline keyboard, 8 in a row
                     if x % 9 == 0:
                         parent_callbacks.append([])
                     parent_callbacks[x // 9].append({'text': f'{x+1}.{y+1}', 'callback_data': f'TRANSIT {work_work_id}'})
@@ -923,10 +925,15 @@ async def relatives(conn, chat_id, work_id, msg_id, inline_markup):
 
                 children_text += f'{x+1}. {work_type_text.capitalize()}{work_name_text}' \
                                  f'{work_author_text}{work_rating_text}\n'
+                # make the rows for the inline keyboard, 8 in a row
                 if x % 9 == 0:
                     children_callbacks.append([])
                 children_callbacks[x // 9].append(
                     {'text': f'{x + 1}.', 'callback_data': f'TRANSIT {work_work_id}'})
+                # limit the amount of buttons and children
+                if x > 96:
+                    children_text += 'Слишком много позиций, выведен неполный список!'
+                    break
 
                 # children_callbacks.append({'text': f'{x + 1}.', 'callback_data': f'TRANSIT {work_work_id}'})
         children_keyboard_markup = {'inline_keyboard': [el for el in children_callbacks]}

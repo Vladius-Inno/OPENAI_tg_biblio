@@ -382,7 +382,8 @@ async def relatives(chat_id=163905035):
         # index = lis.index(3602)
         # print(index)
 
-        for idx in lis[5000:]:  # 189 3642
+        for idx in range(4348, 4350):
+        # for idx in lis[5000:]:  # 189 3642
             try:
                 work = await service.get_work(idx)
                 parent_cycle, digests_cycle, children_cycle = None, None, None
