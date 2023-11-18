@@ -241,12 +241,11 @@ def set_keyboard_rate_work(work_id, relatives_mode='off'):
         ]
     }
 
-    if relatives_mode == 'on':
-        keyboard['inline_keyboard'][1] = []
-        keyboard['inline_keyboard'][1] = []
+    # if relatives_mode == 'on':
+    #     keyboard['inline_keyboard'][1] = []
+    #     keyboard['inline_keyboard'][1] = []
 
     return keyboard
-
 
 # the markup for the button for the subscribe to channel
 keyboard_subscribe = {
@@ -422,7 +421,8 @@ async def parse_updates(result, last_update_json):
 
         try:
             if result['callback_query']:
-                print("HERE IN UPDATES")
+                # get the message inline markup
+                print('The callback markup:', result['callback_query']['message']['reply_markup'])
                 run_next = None
                 # handle like, rates which cause the next card to show, includes the type of card
                 try:
@@ -644,6 +644,7 @@ async def handle_callback_query(callback_query):
     # print('Callback is ', callback_data)
     chat_id = callback_query['message']['chat']['id']
     msg_id = callback_query['message']['message_id']
+    inline_markup = callback_query['message']['reply_markup']
 
     async with await connector._get_user_connection(chat_id) as conn:
 
@@ -658,33 +659,33 @@ async def handle_callback_query(callback_query):
             print('Here comes the callback', callback_data)
             # transfer the chat_id, the work_id which is extracted from the callback, and the msg_id
             if call_action == LIKE:
-                await like(conn, chat_id, int(work_to_handle), msg_id)
+                await like(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
                 # check if the interaction is with the last card in the chat
                 if cache[data_to_get]['work_id'] == int(work_to_handle):
                     # put into run_next the order to run next for chat_id and the type of next card
                     run_next = {'chat_id': str(chat_id), 'what': 'run_next', 'type': cache[data_to_get]['show_type']}
             if call_action == DISLIKE:
-                await dislike(conn, chat_id, int(work_to_handle), msg_id)
+                await dislike(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
                 # check if the interaction is with the last card in the chat
                 if cache[data_to_get]['work_id'] == int(work_to_handle):
                     run_next = {'chat_id': str(chat_id), 'what': 'run_next', 'type': cache[data_to_get]['show_type']}
             if call_action == RATE:
-                await rate(conn, chat_id, work_to_handle, msg_id)
+                await rate(conn, chat_id, work_to_handle, msg_id, inline_markup)
             if call_action in RATES:
-                await rate_digit(conn, chat_id, int(work_to_handle), msg_id, call_action)
+                await rate_digit(conn, chat_id, int(work_to_handle), msg_id, call_action, inline_markup)
                 # check if the interaction is with the last card in the chat
                 if cache[data_to_get]['work_id'] == int(work_to_handle):
                     run_next = {'chat_id': str(chat_id), 'what': 'run_next', 'type': cache[data_to_get]['show_type']}
             if call_action == UNLIKE:
-                await unlike(conn, chat_id, int(work_to_handle), msg_id)
+                await unlike(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
             if call_action == UNDISLIKE:
-                await undislike(conn, chat_id, int(work_to_handle), msg_id)
+                await undislike(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
             if call_action == UNRATE:
-                await unrate(conn, chat_id, int(work_to_handle), msg_id)
+                await unrate(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
             if call_action == DONT_RATE:
-                await dont_rate(conn, chat_id, int(work_to_handle), msg_id)
+                await dont_rate(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
             if call_action == RELATIVES:
-                await relatives(conn, chat_id, int(work_to_handle), msg_id)
+                await relatives(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
             # if call_action == DESCRIPTION:
             #     await description(conn, chat_id, int(work_to_handle), msg_id)
             if call_action == TRANSIT:
@@ -701,7 +702,7 @@ async def update_user_prefs(chat_id, work_id, pref, rate_digit=None):
         await fant_ext.update_recommendations(conn, chat_id, work_id, pref, rate_digit)
 
 
-async def like(conn, chat_id, work_id, msg_id):
+async def like(conn, chat_id, work_id, msg_id, inline_markup):
 
     print(chat_id, 'Likes', work_id)
 
@@ -709,17 +710,15 @@ async def like(conn, chat_id, work_id, msg_id):
     # asyncio.create_task(update_user_prefs(chat_id, work_id, 'like'))
 
     # change the inline-keyboard
-    keyboard = {
-        'inline_keyboard': [[
-            {'text': "Unlike", 'callback_data': f'UNLIKE {work_id}'},
-            {'text': "Rate", 'callback_data': f'{RATE} {work_id}'}
-        ]]
-    }
+    keyboard = inline_markup
+    keyboard['inline_keyboard'][0][0] = {'text': "Unlike", 'callback_data': f'UNLIKE {work_id}'}
+    keyboard['inline_keyboard'][0].pop(1)
+
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
     await db_int.update_pref_score(conn, chat_id, work_id, 'like')
 
 
-async def unlike(conn, chat_id, work_id, msg_id):
+async def unlike(conn, chat_id, work_id, msg_id, inline_markup):
 
     print(chat_id, 'UnLikes', work_id)
 
@@ -727,11 +726,16 @@ async def unlike(conn, chat_id, work_id, msg_id):
     await update_user_prefs(chat_id, work_id, 'unrate')
 
     # change the inline-keyboard
-    keyboard = set_keyboard_rate_work(work_id)
+    keyboard = inline_markup
+    keyboard['inline_keyboard'][0][0] = {'text': "Like", 'callback_data': f'LIKE {work_id}'}
+    keyboard['inline_keyboard'][0].insert(1, {'text': "Dislike", 'callback_data': f'DISLIKE {work_id}'})
+
+    # change the inline-keyboard
+    # keyboard = set_keyboard_rate_work(work_id)
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
 
-async def unrate(conn, chat_id, work_id, msg_id):
+async def unrate(conn, chat_id, work_id, msg_id, inline_markup):
 
     print(chat_id, 'UnRates', work_id)
 
@@ -739,41 +743,66 @@ async def unrate(conn, chat_id, work_id, msg_id):
     await update_user_prefs(chat_id, work_id, 'unrate')
 
     # change the inline-keyboard
-    keyboard = set_keyboard_rate_work(work_id)
+    keyboard = {
+        'inline_keyboard': [[
+            {'text': "Like", 'callback_data': f'LIKE {work_id}'},  # Button with link to the channel
+            {'text': "Dislike", 'callback_data': f'DISLIKE {work_id}'},
+            {'text': "Rate", 'callback_data': f'RATE {work_id}'}
+        ]]}
+
+    # keyboard['inline_keyboard'][0][0] = {'text': "Like", 'callback_data': f'LIKE {work_id}'}
+    # keyboard['inline_keyboard'][0].insert(1, {'text': "Dislike", 'callback_data': f'DISLIKE {work_id}'})
+    for line in inline_markup['inline_keyboard'][1:]:
+        for x, element in enumerate(line):
+            if element['text'] == 'Связи':
+                keyboard['inline_keyboard'].append([{'text': "Связи", 'callback_data': f'RELATIVES {work_id}'}])
+
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
 
-async def undislike(conn, chat_id, work_id, msg_id):
+async def undislike(conn, chat_id, work_id, msg_id, inline_markup):
 
     print(chat_id, 'UnDisikes', work_id)
 
     await update_user_prefs(chat_id, work_id, 'undislike')
     # asyncio.create_task(update_user_prefs(chat_id, work_id, 'undislike'))
 
+    # # change the inline-keyboard
+    # keyboard = set_keyboard_rate_work(work_id)
+
     # change the inline-keyboard
-    keyboard = set_keyboard_rate_work(work_id)
+    keyboard = inline_markup
+    keyboard['inline_keyboard'][0][0] = {'text': "Like", 'callback_data': f'LIKE {work_id}'}
+    keyboard['inline_keyboard'][0].insert(1, {'text': "Dislike", 'callback_data': f'DISLIKE {work_id}'})
+
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
 
-async def dislike(conn, chat_id, work_id, msg_id):
+async def dislike(conn, chat_id, work_id, msg_id, inline_markup):
 
     print(chat_id, 'Dislikes', work_id)
 
     # asyncio.create_task(update_user_prefs(chat_id, work_id, 'dislike'))
     await update_user_prefs(chat_id, work_id, 'dislike')
 
+    # # change the inline-keyboard
+    # keyboard = {
+    #     'inline_keyboard': [[
+    #         {'text': "Undislike", 'callback_data': f'UNDISLIKE {work_id}'},
+    #         {'text': "Rate", 'callback_data': f'{RATE} {work_id}'}
+    #     ]]
+    # }
+
     # change the inline-keyboard
-    keyboard = {
-        'inline_keyboard': [[
-            {'text': "Undislike", 'callback_data': f'UNDISLIKE {work_id}'},
-            {'text': "Rate", 'callback_data': f'{RATE} {work_id}'}
-        ]]
-    }
+    keyboard = inline_markup
+    keyboard['inline_keyboard'][0][0] = {'text': "Undislike", 'callback_data': f'UNDISLIKE {work_id}'}
+    keyboard['inline_keyboard'][0].pop(1)
+
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
     await db_int.update_pref_score(conn, chat_id, work_id, 'dislike')
 
 
-async def rate(conn, chat_id, work_id, msg_id):
+async def rate(conn, chat_id, work_id, msg_id, inline_markup):
     print(chat_id, 'is going to rate', work_id)
 
     # change the inline-keyboard
@@ -795,17 +824,36 @@ async def rate(conn, chat_id, work_id, msg_id):
 
         ]
     }
+
+    for line in inline_markup['inline_keyboard'][1:]:
+        for x, element in enumerate(line):
+            if element['text'] == 'Связи':
+                keyboard['inline_keyboard'].append([{'text': "Связи", 'callback_data': f'RELATIVES {work_id}'}])
+
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
 
-async def dont_rate(conn, chat_id, work_id, msg_id):
+async def dont_rate(conn, chat_id, work_id, msg_id, inline_markup):
     print(chat_id, 'is NOT going to rate', work_id)
 
-    keyboard = set_keyboard_rate_work(work_id)
+    # keyboard = set_keyboard_rate_work(work_id)
+
+    keyboard = {
+        'inline_keyboard': [[
+            {'text': "Like", 'callback_data': f'LIKE {work_id}'},  # Button with link to the channel
+            {'text': "Dislike", 'callback_data': f'DISLIKE {work_id}'},
+            {'text': "Rate", 'callback_data': f'RATE {work_id}'}
+        ]]}
+
+    for line in inline_markup['inline_keyboard'][1:]:
+        for x, element in enumerate(line):
+            if element['text'] == 'Связи':
+                keyboard['inline_keyboard'].append([{'text': "Связи", 'callback_data': f'RELATIVES {work_id}'}])
+
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
 
-async def rate_digit(conn, chat_id, work_id, msg_id, rate_string):
+async def rate_digit(conn, chat_id, work_id, msg_id, rate_string, inline_markup):
 
     if rate_string not in RATES:
         return
@@ -823,11 +871,18 @@ async def rate_digit(conn, chat_id, work_id, msg_id, rate_string):
             {'text': "Smth else", 'callback_data': f'SMTH {work_id}'}
         ]]
     }
+
+    for line in inline_markup['inline_keyboard'][1:]:
+        for x, element in enumerate(line):
+            if element['text'] == 'Связи':
+                keyboard['inline_keyboard'].append([{'text': "Связи", 'callback_data': f'RELATIVES {work_id}'}])
+
+
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
     await db_int.update_pref_score(conn, chat_id, work_id, 'rate', rate_digit)
 
 
-async def relatives(conn, chat_id, work_id, msg_id):
+async def relatives(conn, chat_id, work_id, msg_id, inline_markup):
     print(f'{chat_id} wants to see relatives of {work_id}')
     work_ext = await service.get_extended_work(work_id)
 
@@ -878,7 +933,15 @@ async def relatives(conn, chat_id, work_id, msg_id):
         if children_text == "\n\nВ произведение входят:\n\n":
             children_text = ""
 
-    await telegram.edit_bot_message_markup(chat_id, msg_id, set_keyboard_rate_work(work_id, relatives_mode='on'))
+    keyboard = inline_markup
+    for line in inline_markup['inline_keyboard'][1:]:
+        for x, element in enumerate(line):
+            if element['text'] == 'Связи':
+                line.pop(x)
+    # inline_markup['inline_keyboard'][1].pop(0)
+
+    # await telegram.edit_bot_message_markup(chat_id, msg_id, set_keyboard_rate_work(work_id, relatives_mode='on'))
+    await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
     try:
 
@@ -886,8 +949,11 @@ async def relatives(conn, chat_id, work_id, msg_id):
             await telegram.send_text(parent_text, chat_id, msg_id, reply_markup=parent_keyboard_markup)
     except Exception as e:
         print('Debug:', e)
-    if children_text:
-        await telegram.send_text(children_text, chat_id, msg_id, reply_markup=children_keyboard_markup)
+    try:
+        if children_text:
+            await telegram.send_text(children_text, chat_id, msg_id, reply_markup=children_keyboard_markup)
+    except Exception as e:
+        print('Debug:', e)
     if not any([parent_text, children_text]):
         await telegram.send_text("Нет циклов для этого произведения", chat_id, msg_id)
 
@@ -921,9 +987,9 @@ async def transit_relative(chat_id, work_id):
     return work.id, chat_id
 
 
-async def description(conn, chat_id, work_id, msg_id):
-    print(f'{chat_id} wants to see description of {work_id}')
-    await telegram.edit_bot_message_markup(chat_id, msg_id, set_keyboard_rate_work(work_id, relatives_mode='off'))
+# async def description(conn, chat_id, work_id, msg_id):
+#     print(f'{chat_id} wants to see description of {work_id}')
+#     await telegram.edit_bot_message_markup(chat_id, msg_id, set_keyboard_rate_work(work_id, relatives_mode='off'))
 
 
 async def add_new_user(user_id):

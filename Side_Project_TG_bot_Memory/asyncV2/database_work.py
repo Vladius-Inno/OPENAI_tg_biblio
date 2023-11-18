@@ -85,10 +85,10 @@ class DatabaseConnector:
 
     @handle_database_errors
     async def query_db(self, conn, sql, *params, method='fetchall'):
-        print("SQL:", sql, params)
+        # print("SQL:", sql, params)
         # print(conn)
         result = await conn.fetch(sql, *params)
-        print('Fetched')
+        print('Fetched from the DB')
         if method == 'fetchall':
             return result
         elif method == 'fetchone':
