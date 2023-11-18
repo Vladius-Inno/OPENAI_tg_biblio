@@ -40,11 +40,14 @@ async def options_exist(ext, conn, chat_id, func: str):
 
 async def get_subscription(ext, conn, chat_id, func: str):
     data_to_get = str(chat_id) + '_' + func
-    if data_to_get in cache:
-        last_update_time = cache[data_to_get + "_timestamp"]
-        if (datetime.now() - last_update_time) < TIME_DELTA:
-            print('Get the subscription from cache', cache[data_to_get])
-            return cache[data_to_get]
+    try:
+        if data_to_get in cache:
+            last_update_time = cache[data_to_get + "_timestamp"]
+            if (datetime.now() - last_update_time) < TIME_DELTA:
+                print('Get the subscription from cache', cache[data_to_get])
+                return cache[data_to_get]
+    except Exception as e:
+        print('Problem getting the subscription from cache', e)
     # If not in the cache or TTL expired, query the database
     result = await ext.get_subscription(conn, int(chat_id))
     # Store the result in the cache

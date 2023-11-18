@@ -16,7 +16,7 @@ import cached_funcs
 from cached_funcs import cache
 from telegram_bot_pagination import InlineKeyboardPaginator, InlineKeyboardButton
 from constants import BOT_TOKEN, BOT_NAME, FILENAME, RATE_1, RATE_2, RATE_3, RATE_4, RATE_5, RATE_6, RATE_7, RATE_8, \
-    RATE_9, RATE_10, DONT_RATE,  RATES, UNLIKE, UNDISLIKE, UNRATE, \
+    RATE_9, RATE_10, DONT_RATE, RATES, UNLIKE, UNDISLIKE, UNRATE, \
     CLEAR_COMMAND, START_COMMAND, INFO_COMMAND, REFERRAL_COMMAND, HELP_COMMAND, RECOM_COMMAND, \
     SUBSCRIPTION_COMMAND, CHANNEL_NAME, CHANNEL_NAME_RUS, TEST, DAY_LIMIT_PRIVATE, DAY_LIMIT_SUBSCRIPTION, \
     CONTEXT_DEPTH, MAX_TOKENS, REFERRAL_BONUS, MONTH_SUBSCRIPTION_PRICE, CHECK_MARK, LITERATURE_EXPERT_ROLE, \
@@ -54,7 +54,6 @@ service = fantlab.BookDatabase(api_connect)
 
 
 async def store_book(conn, work, chat_id):
-
     stored = await fant_ext.store_work(conn, work)
 
     if stored:
@@ -98,6 +97,7 @@ async def store_book(conn, work, chat_id):
             await fant_ext.update_relatives(conn, ext_work.id, parent_cycle, digests_cycle, children_cycle)
         except Exception as e:
             print('Relatives are not updated', e)
+
 
 #
 # async def send_waiting_message(chat_id):
@@ -184,7 +184,6 @@ async def handle_recommend_book(chat_id):
             await telegram.send_text('Недостаточно оценок! Запросите ещё несколько случайных книг', chat_id)
 
 
-
 async def handle_recomendation(chat_id):
     pass
 
@@ -228,7 +227,6 @@ async def set_keyboard_roles(conn, chat_id):
 
 
 def set_keyboard_rate_work(work_id, relatives_mode='off'):
-
     keyboard = {
         'inline_keyboard': [[
             {'text': "Like", 'callback_data': f'LIKE {work_id}'},  # Button with link to the channel
@@ -246,6 +244,7 @@ def set_keyboard_rate_work(work_id, relatives_mode='off'):
     #     keyboard['inline_keyboard'][1] = []
 
     return keyboard
+
 
 # the markup for the button for the subscribe to channel
 keyboard_subscribe = {
@@ -368,7 +367,6 @@ async def subcribe_channel(chat_id):
 
 
 async def parse_updates(result, last_update_json):
-
     last_update = last_update_json['last_update']
     last_update_new = last_update_json
 
@@ -465,7 +463,6 @@ async def parse_updates(result, last_update_json):
 
 
 async def handle_private(result):
-
     chat_id = result['message']['chat']['id']
     msg_id = str(int(result['message']['message_id']))
 
@@ -486,12 +483,12 @@ async def handle_private(result):
         # cached
         # a new user
         if not await cached_funcs.user_exists(db_int, conn, chat_id, 'user_exists'):
-            await add_new_user(chat_id)
+            await add_new_user(conn, chat_id)
 
         # cached
         # set options for a new user or in case of options failure
         if not await cached_funcs.options_exist(db_int, conn, chat_id, 'options_exist'):
-            await db_int.set_user_option(conn, chat_id)
+            await set_user_option(conn, chat_id)
 
         # Command detection starts
         if START_COMMAND in msg:
@@ -549,13 +546,15 @@ async def handle_private(result):
 
         # TODO - in check_message_limit merge the queries
         # get_free_messages = free_messages, check_message_count = message_count
-        validity, messages_left, free_messages_left = await check_message_limit(conn, chat_id, limit, is_subscription_valid)
+        validity, messages_left, free_messages_left = await check_message_limit(conn, chat_id, limit,
+                                                                                is_subscription_valid)
         print(f"Subscription for {chat_id} is valid: {is_subscription_valid}, messages left {messages_left}, "
               f"bonus messages left {free_messages_left}")
 
         if INFO_COMMAND in msg:
             try:
-                await handler.handle_info_command(conn, chat_id, is_subscription_valid, messages_left, free_messages_left,
+                await handler.handle_info_command(conn, chat_id, is_subscription_valid, messages_left,
+                                                  free_messages_left,
                                                   REFERRAL_BONUS)
                 return
             except Exception as e:
@@ -703,7 +702,6 @@ async def update_user_prefs(chat_id, work_id, pref, rate_digit=None):
 
 
 async def like(conn, chat_id, work_id, msg_id, inline_markup):
-
     print(chat_id, 'Likes', work_id)
 
     await update_user_prefs(chat_id, work_id, 'like')
@@ -719,7 +717,6 @@ async def like(conn, chat_id, work_id, msg_id, inline_markup):
 
 
 async def unlike(conn, chat_id, work_id, msg_id, inline_markup):
-
     print(chat_id, 'UnLikes', work_id)
 
     # asyncio.create_task(update_user_prefs(chat_id, work_id, 'unlike'))
@@ -736,7 +733,6 @@ async def unlike(conn, chat_id, work_id, msg_id, inline_markup):
 
 
 async def unrate(conn, chat_id, work_id, msg_id, inline_markup):
-
     print(chat_id, 'UnRates', work_id)
 
     # asyncio.create_task(update_user_prefs(chat_id, work_id, 'unrate'))
@@ -761,7 +757,6 @@ async def unrate(conn, chat_id, work_id, msg_id, inline_markup):
 
 
 async def undislike(conn, chat_id, work_id, msg_id, inline_markup):
-
     print(chat_id, 'UnDisikes', work_id)
 
     await update_user_prefs(chat_id, work_id, 'undislike')
@@ -779,7 +774,6 @@ async def undislike(conn, chat_id, work_id, msg_id, inline_markup):
 
 
 async def dislike(conn, chat_id, work_id, msg_id, inline_markup):
-
     print(chat_id, 'Dislikes', work_id)
 
     # asyncio.create_task(update_user_prefs(chat_id, work_id, 'dislike'))
@@ -854,7 +848,6 @@ async def dont_rate(conn, chat_id, work_id, msg_id, inline_markup):
 
 
 async def rate_digit(conn, chat_id, work_id, msg_id, rate_string, inline_markup):
-
     if rate_string not in RATES:
         return
     rate_digit = RATES.index(rate_string) + 1
@@ -876,7 +869,6 @@ async def rate_digit(conn, chat_id, work_id, msg_id, rate_string, inline_markup)
         for x, element in enumerate(line):
             if element['text'] == 'Связи':
                 keyboard['inline_keyboard'].append([{'text': "Связи", 'callback_data': f'RELATIVES {work_id}'}])
-
 
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
     await db_int.update_pref_score(conn, chat_id, work_id, 'rate', rate_digit)
@@ -900,13 +892,14 @@ async def relatives(conn, chat_id, work_id, msg_id, inline_markup):
                     work_rating_text = f", рейтинг: {parent['rating']}" if parent['rating'] else ""
                     work_work_id = parent['work_id']
 
-                    parent_text += f'{x+1}.{y+1} {work_type_text.capitalize()}{work_name_text}' \
+                    parent_text += f'{x + 1}.{y + 1} {work_type_text.capitalize()}{work_name_text}' \
                                    f'{work_author_text}{work_rating_text}\n'
 
                     # make the rows for the inline keyboard, 8 in a row
-                    if x % 9 == 0:
+                    if x % 8 == 0:
                         parent_callbacks.append([])
-                    parent_callbacks[x // 9].append({'text': f'{x+1}.{y+1}', 'callback_data': f'TRANSIT {work_work_id}'})
+                    parent_callbacks[x // 8].append(
+                        {'text': f'{x + 1}.{y + 1}', 'callback_data': f'TRANSIT {work_work_id}'})
 
         parent_keyboard_markup = {'inline_keyboard': [el for el in parent_callbacks]}
 
@@ -925,7 +918,7 @@ async def relatives(conn, chat_id, work_id, msg_id, inline_markup):
                 work_rating_text = f", рейтинг: {child['rating']}" if child['rating'] else ""
                 work_work_id = child['work_id']
 
-                children_text += f'{x+1}. {work_type_text.capitalize()}{work_name_text}' \
+                children_text += f'{x + 1}. {work_type_text.capitalize()}{work_name_text}' \
                                  f'{work_author_text}{work_rating_text}\n'
                 # make the rows for the inline keyboard, 8 in a row
                 if x % 8 == 0:
@@ -1001,11 +994,16 @@ async def transit_relative(chat_id, work_id):
 #     await telegram.edit_bot_message_markup(chat_id, msg_id, set_keyboard_rate_work(work_id, relatives_mode='off'))
 
 
-async def add_new_user(user_id):
+async def add_new_user(conn, chat_id):
     revealed_date = datetime.now().strftime('%Y-%m-%d')
-    referral_link = f'https://t.me/{BOT_NAME}?start={user_id}'
+    referral_link = f'https://t.me/{BOT_NAME}?start={chat_id}'
     # # Add a new user with default subscription status, start date, and expiration date
-    await db_int.add_new_user(user_id, revealed_date, referral_link)
+    await db_int.add_new_user(conn, chat_id, revealed_date, referral_link)
+
+    data_to_get = str(chat_id) + '_' + 'user_exists'
+    # Store the result in the cache
+    cache[data_to_get] = True
+    cache[data_to_get + "_timestamp"] = datetime.now()
 
     # TODO check if new users are ok with roles
     # conn_opt = sqlite3.connect(OPTIONS_DATABASE)
@@ -1015,6 +1013,14 @@ async def add_new_user(user_id):
     # cursor_opt.execute("INSERT INTO options (chat_id, gpt_role) "
     #                    "VALUES (?, ?)", (user_id, role))
     # conn_opt.commit()
+
+
+async def set_user_option(conn, chat_id):
+
+    await db_int.set_user_option(conn, chat_id)
+    data_to_get = str(chat_id) + '_' + 'options_exist'
+    cache[data_to_get] = True
+    cache[data_to_get + "_timestamp"] = datetime.now()
 
 
 async def add_reffered_by(conn, chat_id, referree):
