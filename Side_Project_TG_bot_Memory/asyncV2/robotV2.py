@@ -22,7 +22,7 @@ from constants import BOT_TOKEN, BOT_NAME, FILENAME, RATE_1, RATE_2, RATE_3, RAT
     CONTEXT_DEPTH, MAX_TOKENS, REFERRAL_BONUS, MONTH_SUBSCRIPTION_PRICE, CHECK_MARK, LITERATURE_EXPERT_ROLE, \
     LITERATURE_EXPERT_ROLE_RUS, DEFAULT_ROLE, DEFAULT_ROLE_RUS, ROLES, ROLES_ZIP, LIKE, DISLIKE, RATE, CALLBACKS, \
     RANDOM_BOOK_COMMAND, RECOMMEND_COMMAND, RECOMMENDATION_EXIT_COMMAND, PREFERENCES_COMMAND, RECOMMEND_BOOK, \
-    WAIT_MESSAGES, RELATIVES, DESCRIPTION, TRANSIT
+    WAIT_MESSAGES, RELATIVES, DESCRIPTION, TRANSIT, DELAY_SLEEP
 
 if sys.stdout.encoding != 'utf-8':
     sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
@@ -485,10 +485,10 @@ async def handle_private(result):
         if not await cached_funcs.user_exists(db_int, conn, chat_id, 'user_exists'):
             await add_new_user(conn, chat_id)
 
-        # cached
-        # set options for a new user or in case of options failure
-        if not await cached_funcs.options_exist(db_int, conn, chat_id, 'options_exist'):
-            await set_user_option(conn, chat_id)
+            # cached
+            # set options for a new user or in case of options failure
+            if not await cached_funcs.options_exist(db_int, conn, chat_id, 'options_exist'):
+                await set_user_option(conn, chat_id)
 
         # Command detection starts
         if START_COMMAND in msg:
@@ -646,6 +646,7 @@ async def handle_callback_query(callback_query):
     inline_markup = callback_query['message']['reply_markup']
 
     async with await connector._get_user_connection(chat_id) as conn:
+        print('Use this connection', conn)
 
         # the flag to load the next book
         run_next = None
@@ -696,6 +697,7 @@ async def handle_callback_query(callback_query):
 
 async def update_user_prefs(chat_id, work_id, pref, rate_digit=None):
     async with await connector._get_user_connection(chat_id) as conn:
+        print('The prefs connection is', conn)
         await fant_ext.update_user_prefs(conn, chat_id, work_id, pref, rate_digit)
         # if pref in ['like', 'rate', 'dislike', ]:
         await fant_ext.update_recommendations(conn, chat_id, work_id, pref, rate_digit)
@@ -786,6 +788,7 @@ async def dislike(conn, chat_id, work_id, msg_id, inline_markup):
     #         {'text': "Rate", 'callback_data': f'{RATE} {work_id}'}
     #     ]]
     # }
+
 
     # change the inline-keyboard
     keyboard = inline_markup
@@ -1114,7 +1117,7 @@ async def main():
             for res in result:
                 asyncio.create_task(parse_updates(res, last_update))
 
-            await asyncio.sleep(5)
+            await asyncio.sleep(DELAY_SLEEP)
 
         except TypeError as e:
             print('Typeerror', e)

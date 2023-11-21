@@ -293,6 +293,7 @@ class DatabaseInteractor:
                            recommended_books rb
                        WHERE
                            rb.chat_id = $1
+                           AND rb.score > 0.5 -- Added condition for score greater than 0.5
                            AND NOT EXISTS (
                                SELECT 1
                                FROM user_actions ua
@@ -544,31 +545,63 @@ class FantInteractor(DatabaseInteractor):
     async def update_recommendations(self, conn, chat_id, work_id, pref, rate_digit):
         # TODO create a reset process for actions "unlike" and so on
         if pref in ['like', 'rate', 'dislike']:
-            sql = """
-                INSERT INTO recommended_books (chat_id, work_id, score)
-                SELECT
-                    $2 AS chat_id,
-                    similar_works.w_id AS work_id,
-                    CASE
-                        WHEN ua.action_type = 'like' THEN 0.6
-                        WHEN ua.action_type = 'rate' THEN ua.rate::FLOAT / 10.0
-                        WHEN ua.action_type = 'dislike' THEN 0.2
-                        ELSE 0.0
-                    END AS score
-                FROM
-                    user_actions ua
-                JOIN
-                    works w ON ua.w_id = w.w_id
-                JOIN
-                    unnest(w.similars) similar_works(w_id) ON true
-                WHERE
-                    ua.w_id = $1
-                ON CONFLICT (chat_id, work_id) DO UPDATE
-                SET
-                    score = EXCLUDED.score;
+            # sql = """
+            #     INSERT INTO recommended_books (chat_id, work_id, score)
+            #     SELECT
+            #         $2 AS chat_id,
+            #         similar_works.w_id AS work_id,
+            #         CASE
+            #             WHEN ua.action_type = 'like' THEN 0.6
+            #             WHEN ua.action_type = 'rate' THEN ua.rate::FLOAT / 10.0
+            #             WHEN ua.action_type = 'dislike' THEN 0.2
+            #             ELSE 0.0
+            #         END AS score
+            #     FROM
+            #         user_actions ua
+            #     JOIN
+            #         works w ON ua.w_id = w.w_id
+            #     JOIN
+            #         unnest(w.similars) similar_works(w_id) ON true
+            #     WHERE
+            #         ua.w_id = $1
+            #     ON CONFLICT (chat_id, work_id) DO UPDATE
+            #     SET
+            #         score = EXCLUDED.score;
+            # """
+            sql = """ 
+                    INSERT INTO recommended_books (chat_id, work_id, score)
+                    SELECT
+                        subquery.chat_id,
+                        subquery.work_id,
+                        subquery.score
+                    FROM (
+                        SELECT
+                            $2::bigint AS chat_id,
+                            similar_works.w_id AS work_id,
+                            CASE
+                                WHEN ua.action_type = 'like' THEN 0.6
+                                WHEN ua.action_type = 'rate' THEN ua.rate::FLOAT / 10.0
+                                WHEN ua.action_type = 'dislike' THEN 0.2
+                                ELSE 0.0
+                            END AS score
+                        FROM
+                            user_actions ua
+                        JOIN
+                            works w ON ua.w_id = w.w_id
+                        JOIN
+                            unnest(w.similars) similar_works(w_id) ON true
+                        WHERE
+                            ua.w_id = $1
+                    ) AS subquery
+                    ON CONFLICT (chat_id, work_id) DO UPDATE
+                    SET
+                        score = EXCLUDED.score;
             """
-            await self.connector.db_query(conn, sql, work_id, chat_id, method='execute')
-            print(f"Recommendations for {chat_id} about the book {work_id} inserted successfully!")
+            try:
+                await self.connector.db_query(conn, sql, work_id, chat_id, method='execute')
+                print(f"Recommendations for {chat_id} about the book {work_id} inserted successfully!")
+            except Exception as e:
+                print('Problem in inserting the recommendation', e)
 
         elif pref in ['unrate', 'unlike', 'undislike']:
             sql = """
@@ -578,11 +611,14 @@ class FantInteractor(DatabaseInteractor):
                 FROM user_actions ua
                 JOIN works w ON ua.w_id = w.w_id
                 JOIN unnest(w.similars) similar_works(w_id) ON true
-                WHERE ua.w_id = $1
+                WHERE ua.w_id = $1  
             );
             """
-            await self.connector.db_query(conn, sql, work_id, chat_id, method='execute')
-            print(f"Recommendations for {chat_id} about the book {work_id} deleted successfully!")
+            try:
+                await self.connector.db_query(conn, sql, work_id, chat_id, method='execute')
+                print(f"Recommendations for {chat_id} about the book {work_id} deleted successfully!")
+            except Exception as e:
+                print('Problem in deleting the recommendation', e)
 
 
     # @handle_database_errors

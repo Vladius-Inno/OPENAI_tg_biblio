@@ -21,6 +21,8 @@ PAY_TOKEN = os.environ['PAY_TOKEN']
 BOT_NAME = os.environ['BOT_NAME']
 PAY_TOKEN_TEST = os.environ['PAY_TOKEN_TEST']
 
+DELAY_SLEEP = 5
+
 # Retrieve last ID message : Create an empty text file named chatgpt.txt, write 1 on the first line of
 # the text file and save it, write the full path of your file below
 FILENAME = 'chatgpt.txt'  # the update number is stored
