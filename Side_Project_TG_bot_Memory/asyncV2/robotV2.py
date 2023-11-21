@@ -1134,7 +1134,7 @@ async def main():
     if not cache.get('extras'):
         cache['extras'] = {}
     if not cache.get('update'):
-        cache['update'] = {}
+        cache['update'] = {"last_update": "32982589", "extras": []}
     while True:
         try:
             # read the last update id parsed from the file
