@@ -379,14 +379,14 @@ async def parse_updates(result, last_update_json):
                 try:
                     last_update = str(int(result['update_id']))
                     last_update_new['last_update'] = last_update
-                    write_update(last_update_new)
+                    await write_update(last_update_new)
                     await telegram.handle_pre_checkout_query(result)
                     print('Successful checkout')
                 except requests.exceptions.RequestException as e:
                     print('Couldnt handle the pre checkout')
                     last_update = str(int(result['update_id']))
                     last_update_new['last_update'] = last_update
-                    write_update(last_update_new)
+                    await write_update(last_update_new)
                     await telegram.send_text('Не удалось провести оплату. Пожалуйста, попробуйте ещё раз!',
                                              result['pre_checkout_query']['from']['id'])
                 return
@@ -399,7 +399,7 @@ async def parse_updates(result, last_update_json):
                 print(f'We have got a channel post in {channel}')
                 last_update = str(int(result['update_id']))
                 last_update_new['last_update'] = last_update
-                write_update(last_update_new)
+                await write_update(last_update_new)
 
                 return
         except Exception as e:
@@ -411,7 +411,7 @@ async def parse_updates(result, last_update_json):
                 print(f'We have got a update to a channel post in {channel}')
                 last_update = str(int(result['update_id']))
                 last_update_new['last_update'] = last_update
-                write_update(last_update_new)
+                await write_update(last_update_new)
 
                 return
         except Exception as e:
@@ -421,20 +421,21 @@ async def parse_updates(result, last_update_json):
             if result['callback_query']:
                 # get the message inline markup
                 print('The callback markup:', result['callback_query']['message']['reply_markup'])
-                run_next = None
+                last_update = str(int(result['update_id']))
+                last_update_new['last_update'] = last_update
+
+                # run_next = None
                 # handle like, rates which cause the next card to show, includes the type of card
                 try:
-                    run_next = await handle_callback_query(result['callback_query'])
+                    await handle_callback_query(result['callback_query'], last_update, last_update_new)
                 except Exception as e:
-                    print('Couldn"t handle the callback, skipping')
-                last_update = str(int(result['update_id']))
-                # last_update_new['extras'].update(run_next)
-                if run_next:
-                    last_update_new['extras'].append(run_next)
-                last_update_new['last_update'] = last_update
-                write_update(last_update_new)
-                print('Wrote down the update', last_update_new)
-                return run_next
+                    print('Couldn"t handle the callback, skipping', e)
+                # if run_next:
+                #     last_update_new['extras'].append(run_next)
+                # last_update_new['last_update'] = last_update
+                # write_update(last_update_new)
+                # print('Wrote down the update', last_update_new)
+                return
         except Exception as e:
             print("Callback query BUG:", e)
 
@@ -445,7 +446,7 @@ async def parse_updates(result, last_update_json):
                 # remember the last update number
                 last_update = str(int(result['update_id']))
                 last_update_new['last_update'] = last_update
-                write_update(last_update_new)
+                await write_update(last_update_new)
 
                 chat_type = str(result['message']['chat']['type'])
                 # check if it's a group
@@ -638,7 +639,16 @@ async def handle_private(result):
 
 
 # Function to handle the callback query from recommendations
-async def handle_callback_query(callback_query):
+async def handle_callback_query(callback_query, last_update, last_update_new):
+
+    # async def run_next_write(run_next, last_update):
+        # if run_next:
+        #     last_update_new['extras'].append(run_next)
+        # last_update_new['last_update'] = last_update
+        # write_update(last_update_new)
+        # print('Wrote down the update', last_update_new)
+        # cache['extras']
+
     callback_data = callback_query['data']
     # print('Callback is ', callback_data)
     chat_id = callback_query['message']['chat']['id']
@@ -648,51 +658,79 @@ async def handle_callback_query(callback_query):
     async with await connector._get_user_connection(chat_id) as conn:
         print('Use this connection', conn)
 
-        # the flag to load the next book
-        run_next = None
-
         call_action = callback_data.split()[0]
         work_to_handle = callback_data.split()[1]
         data_to_get = str(chat_id) + '_last_work'
-
+        # {'12345': {'what': 'run_next', 'type': 'random'},
+        # '67890': {'what': 'transit', 'work_id': '45819'}}
         if call_action in CALLBACKS:
             print('Here comes the callback', callback_data)
             # transfer the chat_id, the work_id which is extracted from the callback, and the msg_id
             if call_action == LIKE:
-                await like(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
                 # check if the interaction is with the last card in the chat
                 if cache[data_to_get]['work_id'] == int(work_to_handle):
                     # put into run_next the order to run next for chat_id and the type of next card
-                    run_next = {'chat_id': str(chat_id), 'what': 'run_next', 'type': cache[data_to_get]['show_type']}
+                    # run_next = {'chat_id': str(chat_id), 'what': 'run_next', 'type': cache[data_to_get]['show_type']}
+                    temp = cache['extras']
+                    temp.update({str(chat_id): {'what': 'run_next', 'type': cache[data_to_get]['show_type']}})
+                    cache['extras'] = temp
+                    print('Wrote extras to cache', cache['extras'])
+                    # await run_next_write(run_next, last_update_new)
+                await write_update(last_update_new)
+                await like(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
             if call_action == DISLIKE:
-                await dislike(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
                 # check if the interaction is with the last card in the chat
                 if cache[data_to_get]['work_id'] == int(work_to_handle):
-                    run_next = {'chat_id': str(chat_id), 'what': 'run_next', 'type': cache[data_to_get]['show_type']}
+                    # run_next = {'chat_id': str(chat_id), 'what': 'run_next', 'type': cache[data_to_get]['show_type']}
+                    temp = cache['extras']
+                    temp.update({str(chat_id): {'what': 'run_next', 'type': cache[data_to_get]['show_type']}})
+                    cache['extras'] = temp
+                await write_update(last_update_new)
+                # await run_next_write(run_next, last_update_new)
+                await dislike(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
             if call_action == RATE:
+                await write_update(last_update_new)
                 await rate(conn, chat_id, work_to_handle, msg_id, inline_markup)
             if call_action in RATES:
-                await rate_digit(conn, chat_id, int(work_to_handle), msg_id, call_action, inline_markup)
                 # check if the interaction is with the last card in the chat
                 if cache[data_to_get]['work_id'] == int(work_to_handle):
-                    run_next = {'chat_id': str(chat_id), 'what': 'run_next', 'type': cache[data_to_get]['show_type']}
+                    temp = cache['extras']
+                    temp.update({str(chat_id): {'what': 'run_next', 'type': cache[data_to_get]['show_type']}})
+                    cache['extras'] = temp
+                    # await run_next_write(run_next, last_update_new)
+                await write_update(last_update_new)
+                await rate_digit(conn, chat_id, int(work_to_handle), msg_id, call_action, inline_markup)
             if call_action == UNLIKE:
+                # await run_next_write(None, last_update_new)
+                await write_update(last_update_new)
                 await unlike(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
             if call_action == UNDISLIKE:
+                # await run_next_write(None, last_update_new)
+                await write_update(last_update_new)
                 await undislike(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
             if call_action == UNRATE:
+                # await run_next_write(None, last_update_new)
+                await write_update(last_update_new)
                 await unrate(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
             if call_action == DONT_RATE:
+                # await run_next_write(None, last_update_new)
+                await write_update(last_update_new)
                 await dont_rate(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
             if call_action == RELATIVES:
+                # await run_next_write(None, last_update_new)
+                await write_update(last_update_new)
                 await relatives(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
             # if call_action == DESCRIPTION:
             #     await description(conn, chat_id, int(work_to_handle), msg_id)
             if call_action == TRANSIT:
-                # await transit_relative(conn, chat_id, int(work_to_handle), msg_id)
-                run_next = {'chat_id': str(chat_id), 'what': 'transit', 'work_id': int(work_to_handle)}
+                temp = cache['extras']
+                temp.update({str(chat_id): {'what': 'transit', 'work_id': int(work_to_handle)}})
+                cache['extras'] = temp
+                # cache['extras'][str(chat_id)] = {'what': 'transit', 'work_id': int(work_to_handle)}
+                # await run_next_write(run_next, last_update_new)
+                await write_update(last_update_new)
 
-        return run_next
+        return
 
 
 async def update_user_prefs(chat_id, work_id, pref, rate_digit=None):
@@ -1063,24 +1101,38 @@ async def check_subscription_validity(conn, chat_id):
     return False
 
 
-def write_update(last_update):
-    # Updating file with last update ID
-    with open(FILENAME, 'w') as f:
-        json.dump(last_update, f)
-        # f.write(last_update)
-    return "done"
+async def write_update(last_update):
+    # # Updating file with last update ID
+    # with open(FILENAME, 'w') as f:
+    #     json.dump(last_update, f)
+    #     # f.write(last_update)
+    # return "done"
+    try:
+        last_update['time'] = datetime.timestamp(datetime.now())
+        if int(cache['update']['last_update']) <= int(last_update['last_update']):
+            cache['update'] = last_update
+            print("Wrote the update to cache", last_update)
+    except Exception as e:
+        print('Could not write upadate data to cache', e)
+    return 'Done'
 
 
 def read_update():
-    with open(FILENAME, 'r') as f:
-        data = json.load(f)
-
+    # with open(FILENAME, 'r') as f:
+    #     data = json.load(f)
+    data = None
+    try:
+        data = cache['update']
+    except Exception as e:
+        print('Could not read the update data from cache', e)
     return data
 
 
-# new main with async create tasks
 async def main():
+# new main with async create tasks
     await connector._create_db_pool()
+    # if not cache.get('extras'):
+    #     cache['extras'] = {}
     while True:
         try:
             # read the last update id parsed from the file
@@ -1096,22 +1148,30 @@ async def main():
                 await telegram.send_text(f"Не смог получить апдейт от телеграма - {e}", '163905035')
 
             # parse extras, if exists, there might be run_next code to run the next random book
-            if last_update['extras']:
-                extras = last_update['extras']
-                for idx, user_desire in enumerate(extras[:]):
-                    if user_desire['what'] == 'run_next':
-                        print(f'User {user_desire["chat_id"]} wants to run next for {user_desire["type"]}')
-                        last_update['extras'] = []
-                        write_update(last_update)
-                        if user_desire['type'] == 'random':
-                            asyncio.create_task(handle_random_book(int(user_desire['chat_id'])))
-                        if user_desire['type'] == 'recommendation':
-                            asyncio.create_task(handle_recommend_book(int(user_desire['chat_id'])))
-                    if user_desire['what'] == 'transit':
-                        print(f'User {user_desire["chat_id"]} wants to transit to a relative {user_desire["work_id"]}')
-                        last_update['extras'] = []
-                        write_update(last_update)
-                        asyncio.create_task(transit_relative(int(user_desire['chat_id']), user_desire["work_id"]))
+            # if last_update['extras']:
+            if cache.get('extras'):     # {'12345': {'what': 'run_next', 'type': 'random'},
+                                        # '67890': {'what': 'transit', 'work_id': '45819'}}
+                extras = cache['extras']
+                for key in list(extras.keys()):
+                    extra = extras[key]
+                    if extra['what'] == 'run_next':
+                        who = key
+                        type_ = extra["type"]
+                        print(f'User {key} wants to run next for {type_}')
+                        # await write_update(last_update)
+                        temp = extras
+                        temp.pop(key)
+                        cache['extras'] = temp
+                        print('Wrote extras to cache', cache['extras'])
+                        if type_ == 'random':
+                            asyncio.create_task(handle_random_book(int(key)))
+                        if type_ == 'recommendation':
+                            asyncio.create_task(handle_recommend_book(int(key)))
+                    if extra['what'] == 'transit':
+                        print(f'User {key} wants to transit to a relative {extra["work_id"]}')
+                        # last_update['extras'] = []
+                        await write_update(last_update)
+                        asyncio.create_task(transit_relative(int(key), extra["work_id"]))
 
             # iterate on the list of updates
             for res in result:
