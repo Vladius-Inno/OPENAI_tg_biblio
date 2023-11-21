@@ -1131,8 +1131,8 @@ def read_update():
 async def main():
 # new main with async create tasks
     await connector._create_db_pool()
-    # if not cache.get('extras'):
-    #     cache['extras'] = {}
+    if not cache.get('extras'):
+        cache['extras'] = {}
     while True:
         try:
             # read the last update id parsed from the file
