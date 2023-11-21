@@ -1133,6 +1133,8 @@ async def main():
     await connector._create_db_pool()
     if not cache.get('extras'):
         cache['extras'] = {}
+    if not cache.get('update'):
+        cache['update'] = {}
     while True:
         try:
             # read the last update id parsed from the file
