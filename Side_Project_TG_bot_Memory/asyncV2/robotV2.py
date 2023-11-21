@@ -1157,7 +1157,6 @@ async def main():
                 for key in list(extras.keys()):
                     extra = extras[key]
                     if extra['what'] == 'run_next':
-                        who = key
                         type_ = extra["type"]
                         print(f'User {key} wants to run next for {type_}')
                         # await write_update(last_update)
@@ -1172,7 +1171,12 @@ async def main():
                     if extra['what'] == 'transit':
                         print(f'User {key} wants to transit to a relative {extra["work_id"]}')
                         # last_update['extras'] = []
-                        await write_update(last_update)
+                        temp = extras
+                        temp.pop(key)
+                        cache['extras'] = temp
+                        print('Wrote extras to cache', cache['extras'])
+
+                        # await write_update(last_update)
                         asyncio.create_task(transit_relative(int(key), extra["work_id"]))
 
             # iterate on the list of updates
