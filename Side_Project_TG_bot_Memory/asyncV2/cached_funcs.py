@@ -72,7 +72,7 @@ async def user_subscribed(ext, chat_id, channel, func: str):
     try:
         if data_to_get in cache:
             last_update_time = cache[data_to_get + "_timestamp"]
-            if (datetime.now() - last_update_time) < TIME_DELTA:
+            if (datetime.now() - last_update_time) < timedelta(minutes=1):
                 print('Get the channel subscription from cache', cache[data_to_get])
                 return cache[data_to_get]
     except Exception as e:
@@ -82,8 +82,9 @@ async def user_subscribed(ext, chat_id, channel, func: str):
     print(f'{func} is not in cache')
     result = await ext.user_subscribed(int(chat_id), channel)
     # Store the result in the cache
-    cache[data_to_get] = result
-    cache[data_to_get + "_timestamp"] = datetime.now()
+    if result:
+        cache[data_to_get] = result
+        cache[data_to_get + "_timestamp"] = datetime.now()
     return result
 
 
