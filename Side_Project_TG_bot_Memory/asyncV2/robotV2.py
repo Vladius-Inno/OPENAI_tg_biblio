@@ -1,4 +1,4 @@
-# version 0.0.1, working on news
+# version 0.1.0, added the recommendations
 import json
 import random
 
@@ -375,7 +375,7 @@ async def parse_updates(result, last_update_json):
         # handle the pre_check_out
         # TODO Drag to the payment lib
         try:
-            if result['pre_checkout_query']:
+            if result.get('pre_checkout_query'):
                 try:
                     last_update = str(int(result['update_id']))
                     last_update_new['last_update'] = last_update
@@ -394,7 +394,7 @@ async def parse_updates(result, last_update_json):
             pass
 
         try:
-            if result['channel_post']:
+            if result.get('channel_post'):
                 channel = result['channel_post']['sender_chat']['title']
                 print(f'We have got a channel post in {channel}')
                 last_update = str(int(result['update_id']))
@@ -406,7 +406,7 @@ async def parse_updates(result, last_update_json):
             pass
 
         try:
-            if result['edited_channel_post']:
+            if result.get('edited_channel_post'):
                 channel = result['edited_channel_post']['sender_chat']['title']
                 print(f'We have got a update to a channel post in {channel}')
                 last_update = str(int(result['update_id']))
@@ -418,7 +418,7 @@ async def parse_updates(result, last_update_json):
             pass
 
         try:
-            if result['callback_query']:
+            if result.get('callback_query'):
                 # get the message inline markup
                 print('The callback markup:', result['callback_query']['message']['reply_markup'])
                 last_update = str(int(result['update_id']))
