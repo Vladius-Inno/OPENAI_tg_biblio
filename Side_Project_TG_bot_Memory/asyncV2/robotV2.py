@@ -600,7 +600,7 @@ async def handle_private(result):
 
                 # get the last n messages from the db to feed them to the gpt
                 messages = await get_last_messages(conn, chat_id, CONTEXT_DEPTH)
-                print('got last messages:', messages)
+                # print('got last messages:', messages)
                 # add the last received message to the db
                 await add_private_message_to_db(conn, chat_id, msg, 'user', is_subscription_valid)
                 # send the last message and the previous historical messages from the db to the GPT
@@ -656,7 +656,7 @@ async def handle_callback_query(callback_query, last_update, last_update_new):
     inline_markup = callback_query['message']['reply_markup']
 
     async with await connector._get_user_connection(chat_id) as conn:
-        print('Use this connection', conn)
+        # print('Use this connection', conn)
 
         call_action = callback_data.split()[0]
         work_to_handle = callback_data.split()[1]
@@ -735,7 +735,7 @@ async def handle_callback_query(callback_query, last_update, last_update_new):
 
 async def update_user_prefs(chat_id, work_id, pref, rate_digit=None):
     async with await connector._get_user_connection(chat_id) as conn:
-        print('The prefs connection is', conn)
+        # print('The prefs connection is', conn)
         await fant_ext.update_user_prefs(conn, chat_id, work_id, pref, rate_digit)
         # if pref in ['like', 'rate', 'dislike', ]:
         await fant_ext.update_recommendations(conn, chat_id, work_id, pref, rate_digit)
@@ -991,12 +991,12 @@ async def relatives(conn, chat_id, work_id, msg_id, inline_markup):
         if parent_text:
             await telegram.send_text(parent_text, chat_id, msg_id, reply_markup=parent_keyboard_markup)
     except Exception as e:
-        print('Debug:', e)
+        print('Debug parents:', e)
     try:
         if children_text:
             await telegram.send_text(children_text, chat_id, msg_id, reply_markup=children_keyboard_markup)
     except Exception as e:
-        print('Debug:', e)
+        print('Debug children:', e)
     if not any([parent_text, children_text]):
         await telegram.send_text("Нет циклов для этого произведения", chat_id, msg_id)
 

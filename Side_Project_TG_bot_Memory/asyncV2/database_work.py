@@ -88,7 +88,7 @@ class DatabaseConnector:
         # print("SQL:", sql, params)
         # print(conn)
         result = await conn.fetch(sql, *params)
-        print('Fetched from the DB')
+        print('Fetched from the DB. The querey was:', sql[:30])
         if method == 'fetchall':
             return result
         elif method == 'fetchone':
@@ -459,7 +459,7 @@ class FantInteractor(DatabaseInteractor):
             work = work.id
             print(f'Checking if {work} in DB')
         except Exception as e:
-            print('Problem with work id')
+            print('Problem with work id', e)
         sql = f"SELECT 1 FROM {self.table} WHERE w_id = $1 LIMIT 1"
         result = await self.connector.db_query(conn, sql, work, method='fetchone')
         if result and result[0]:

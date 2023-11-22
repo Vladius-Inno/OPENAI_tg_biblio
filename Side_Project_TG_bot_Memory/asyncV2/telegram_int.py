@@ -37,13 +37,13 @@ class TelegramInt:
         if reply_markup:
             reply_markup = json.dumps(reply_markup)
             payload['reply_markup'] = reply_markup
-        print("TG sending the text", payload)
+        print("TG sending the text to", chat_id)
         response = requests.post(
             self.base_url + self.bot_token + '/sendMessage',
             json=payload, timeout=10
         )
         response.raise_for_status()  # Raises an exception for non-2xx status codes
-        print("TG sent the data", response)
+        # print("TG sent the data", response)
         return response.json()
 
     @handle_telegram_errors
@@ -60,13 +60,13 @@ class TelegramInt:
         if reply_markup:
             reply_markup = json.dumps(reply_markup)
             payload['reply_markup'] = reply_markup
-        print("TG sending the photo", payload)
+        print("TG sending the photo to ", chat_id)
         response = requests.post(
             self.base_url + self.bot_token + '/sendPhoto',
             json=payload, timeout=10
         )
         response.raise_for_status()  # Raises an exception for non-2xx status codes
-        print("TG sent the photo", response)
+        # print("TG sent the photo", response)
         return response.json()
 
     @handle_telegram_errors
@@ -121,10 +121,10 @@ class TelegramInt:
             'message_id': message_id,
             'text': text
         }
-        print('Editing', payload)
+        print('Editing', message_id)
         response = requests.post(url, json=payload, timeout=20)
         response.raise_for_status()
-        print("Edited the message in TG", response)
+        print("Edited the message in TG")
         return response.json()
 
     @handle_telegram_errors
@@ -218,7 +218,6 @@ class TelegramInt:
             'text': message,
         }
         # Convert the keyboard dictionary to JSON string and add to the payload
-
 
         if reply_markup:
             reply_markup = json.dumps(reply_markup)
