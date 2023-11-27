@@ -444,39 +444,69 @@ async def similars(chat_id=163905035):
 
 async def checker(chat_id=163905035):
     await fant_ext._create_db_pool()
-    print(datetime.datetime.now().isoformat())
-    # 3159 no genres
-    # 4698 no work
-    for idx in range(6000, 6010):
-        try:
-            work = await service.get_work(idx)
-            if work:
-                print(f"Got the work {idx} - {work.title}")
+    async with await fant_ext._get_user_connection(163905035) as conn:
+        print(datetime.datetime.now().isoformat())
+        # 3159 no genres
+        # 4698 no work
+        for idx in range(34000, 36000):
+            try:
+                work = await service.get_work(idx)
+                if work:
+                    print(f"Got the work {idx} - {work.title}")
 
-                await connector.store_work(chat_id, work)
-                work_ext = await service.get_extended_work(idx)
-                if work_ext:
-                    print(f'Got extended work {idx}')
-                    genres = work_ext.get_characteristics()
-                    if genres:
-                        await fant_ext.update_work_genres(chat_id, work_ext.id, genres)
-                        print(f'Genres for book {work_ext.id} updated')
-                        print("+======================================")
+                    stored = await fant_int.store_work(conn, work)
+                    if stored:
+                        work_ext = await service.get_extended_work(idx)
+                        if work_ext:
+                            print(f'Got extended work {idx}')
+                            genres = work_ext.get_characteristics()
+                            if genres:
+                                await fant_int.update_work_genres(conn, work_ext.id, genres)
+                                print(f'Genres for book {work_ext.id} updated')
+                            else:
+                                print(f"Book {work_ext.id} isn't classified")
+
+                        similar_books = await service.get_similars(idx)
+                        if similar_books:
+                            await fant_int.update_similars(conn, idx, similar_books)
+                            print(f"Updated the similars for {idx}")
+                        else:
+                            print(f'No similars for {idx}')
+
+                        parents = await work_ext.get_parents()
+                        parent_cycle, digests_cycle = None, None
+
+                        if parents:
+                            if parents.get('cycles'):
+                                cycles = parents.get('cycles')
+                                parent_cycle = [[parent['work_id'] for parent in parent_cycle] for parent_cycle in cycles]
+                                print('Parents cycles:', parent_cycle)
+
+                            if parents.get('digests'):
+                                digests = parents.get('digests')
+                                digests_cycle = [digest['work_id'] for digest in digests]
+                                print('Digests:', digests_cycle)
+
+                        children = await work_ext.get_children()
+                        children_cycle = None
+                        if children:
+                            children_cycle = [child['work_id'] for child in children]
+                            print('Children:', children_cycle)
+                        try:
+                            await fant_int.update_relatives(conn, work_ext.id, parent_cycle, digests_cycle, children_cycle)
+                            # print(f'Relatives for book {work_ext.id} updated')
+                            print("+======================================")
+                        except Exception as e:
+                            print('Relatives are not updated', e)
                     else:
-                        print(f"Book {work_ext.id} isn't classified")
+                        print(f'Work {work.id} is allready PRESENT id DB')
                         print("+======================================")
 
-                similar_books = await service.get_similars(idx)
-                if similar_books:
-                    await fant_ext.update_similars(chat_id, idx, similar_books)
-                    print(f"Updated the similars for {idx}")
-                else:
-                    print(f'No similars for {idx}')
-        except Exception as e:
-            print(f'No work {idx}, exeption: {e}')
-            print("+======================================")
-    print('Process finished')
-    print(datetime.datetime.now().isoformat())
+            except Exception as e:
+                print(f'No work {idx}, exeption: {e}')
+                print("+======================================")
+        print('Process finished')
+        print(datetime.datetime.now().isoformat())
 
 
 if __name__ == '__main__':
@@ -497,7 +527,7 @@ if __name__ == '__main__':
     # asyncio.run(checker())
     # asyncio.run(similars())
     # asyncio.run(book_list())
-    asyncio.run(relatives())
+    asyncio.run(checker())
 
     # # print(work.get_characteristics())
     # work.print_characteristics()
