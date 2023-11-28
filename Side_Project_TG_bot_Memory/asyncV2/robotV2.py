@@ -630,6 +630,11 @@ async def handle_private(result):
                     print('Need to decrease the free messages')
                     await db_int.decrease_free_messages(conn, chat_id, 1)
 
+                # handle search
+                if msg.lower().startswith('найди'):
+                    await search_work(conn, chat_id, msg.lower().strip('найди'), msg_id)
+                    return
+
                 # get the last n messages from the db to feed them to the gpt
                 messages = await get_last_messages(conn, chat_id, CONTEXT_DEPTH)
                 # print('got last messages:', messages)
@@ -672,14 +677,13 @@ async def handle_private(result):
 
 # Function to handle the callback query from recommendations
 async def handle_callback_query(callback_query, last_update, last_update_new):
-
     # async def run_next_write(run_next, last_update):
-        # if run_next:
-        #     last_update_new['extras'].append(run_next)
-        # last_update_new['last_update'] = last_update
-        # write_update(last_update_new)
-        # print('Wrote down the update', last_update_new)
-        # cache['extras']
+    # if run_next:
+    #     last_update_new['extras'].append(run_next)
+    # last_update_new['last_update'] = last_update
+    # write_update(last_update_new)
+    # print('Wrote down the update', last_update_new)
+    # cache['extras']
 
     callback_data = callback_query['data']
     # print('Callback is ', callback_data)
@@ -859,7 +863,6 @@ async def dislike(conn, chat_id, work_id, msg_id, inline_markup):
     #     ]]
     # }
 
-
     # change the inline-keyboard
     keyboard = inline_markup
     keyboard['inline_keyboard'][0][0] = {'text': "Undislike", 'callback_data': f'UNDISLIKE {work_id}'}
@@ -1033,6 +1036,56 @@ async def relatives(conn, chat_id, work_id, msg_id, inline_markup):
         await telegram.send_text("Нет циклов для этого произведения", chat_id, msg_id)
 
 
+async def search_work(conn, chat_id, query, msg_id):
+    print(f'{chat_id} searches for "{query}"')
+    books = None
+    try:
+        books = await service.search_work(query)
+    except Exception as e:
+        print('Bug in search', e)
+
+    if books and books.book_list():
+        book_text = "Результаты поиска:\n\n"
+        book_keyboard_markup = None
+        book_callbacks = [[]]
+        for idx, book in enumerate(books.book_list()):
+            counter = 0
+            if book:
+                if book.id:
+                    counter += 1
+                    book_type_text = f"{book.work_type}" if book.work_type else ""
+                    book_name_text = f" {book.work_name}" if book.work_name else ""
+                    book_author_text = f", {book.author}" if book.author else ""
+                    book_rating_text = ", рейтинг: {:.2f}".format(book.rating) if book.rating else ""
+                    book_work_id = book.id
+
+                    book_text += f'{idx + 1}. {book_type_text.capitalize()}{book_name_text}' \
+                                 f'{book_author_text}{book_rating_text}\n'
+                    # make the rows for the inline keyboard, 8 in a row
+                    if idx % 8 == 0:
+                        book_callbacks.append([])
+                    book_callbacks[idx // 8].append(
+                        {'text': f'{idx + 1}.', 'callback_data': f'TRANSIT {book_work_id}'})
+                    # limit the amount of buttons and children
+                    if counter > 25:
+                        book_text += '\nСлишком много позиций, выведен неполный список!'
+                        break
+
+                    # children_callbacks.append({'text': f'{x + 1}.', 'callback_data': f'TRANSIT {work_work_id}'})
+            book_keyboard_markup = {'inline_keyboard': [el for el in book_callbacks]}
+            if book_text == "Результаты поиска:\n\n":
+                book_text = ""
+        try:
+            if book_text:
+                await telegram.send_text(book_text, chat_id, msg_id, reply_markup=book_keyboard_markup)
+        except Exception as e:
+            print('Debug search:', e)
+
+    else:
+        print('Nothing found')
+        await telegram.send_text("Ничего не найдено", chat_id, msg_id)
+
+
 async def transit_relative(chat_id, work_id):
     async with await connector._get_user_connection(chat_id) as conn:
 
@@ -1089,7 +1142,6 @@ async def add_new_user(conn, chat_id):
 
 
 async def set_user_option(conn, chat_id):
-
     await db_int.set_user_option(conn, chat_id)
     data_to_get = str(chat_id) + '_' + 'options_exist'
     cache[data_to_get] = True
@@ -1161,7 +1213,7 @@ def read_update():
 
 
 async def main():
-# new main with async create tasks
+    # new main with async create tasks
     await connector._create_db_pool()
     if not cache.get('extras'):
         cache['extras'] = {}
@@ -1183,8 +1235,8 @@ async def main():
 
             # parse extras, if exists, there might be run_next code to run the next random book
             # if last_update['extras']:
-            if cache.get('extras'):     # {'12345': {'what': 'run_next', 'type': 'random'},
-                                        # '67890': {'what': 'transit', 'work_id': '45819'}}
+            if cache.get('extras'):  # {'12345': {'what': 'run_next', 'type': 'random'},
+                # '67890': {'what': 'transit', 'work_id': '45819'}}
                 extras = cache['extras']
                 for key in list(extras.keys()):
                     extra = extras[key]

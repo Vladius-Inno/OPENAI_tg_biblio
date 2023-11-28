@@ -81,6 +81,57 @@ class Work:
     def raw(self):
         return self.data
 
+    # {
+    #     "all_autor_name": "",
+    #     "all_autor_rusname": "Аркадий и Борис Стругацкие",
+    #     "altname": "",
+    #     "autor1_id": 52,
+    #     "autor1_is_opened": 1,
+    #     "autor1_rusname": "Аркадий и Борис Стругацкие",
+    #     "autor2_id": 0,
+    #     "autor2_is_opened": 0,
+    #     "autor2_rusname": "",
+    #     "autor3_id": 0,
+    #     "autor3_is_opened": 0,
+    #     "autor3_rusname": "",
+    #     "autor4_id": 0,
+    #     "autor4_is_opened": 0,
+    #     "autor4_rusname": "",
+    #     "autor5_id": 0,
+    #     "autor5_is_opened": 0,
+    #     "autor5_rusname": "",
+    #     "autor_id": 52,
+    #     "autor_is_opened": 1,
+    #     "autor_rusname": "Аркадий и Борис Стругацкие",
+    #     "doc": 560,
+    #     "fullname": " Понедельник начинается в субботу   ",
+    #     "keywords": "",
+    #     "level": 7,
+    #     "markcount": 9745,
+    #     "midmark": [
+    #         8.76224040985107
+    #     ],
+    #     "midmark_by_weight": [
+    #         8.73299980163574
+    #     ],
+    #     "name": "",
+    #     "name_eng": "story",
+    #     "name_show_im": "повесть",
+    #     "nearest_parent_work_id": 560,
+    #     "parent_work_id": 0,
+    #     "parent_work_id_present": 0,
+    #     "pic_edition_id": 0,
+    #     "pic_edition_id_auto": 12273,
+    #     "rating": [
+    #         8.64653968811035
+    #     ],
+    #     "rusname": "Понедельник начинается в субботу",
+    #     "weight": 156648,
+    #     "work_id": 560,
+    #     "work_type_id": 44,
+    #     "year": 1965
+    # },
+
 
 class SearchedWork(Work):
     def __init__(self, data):
@@ -90,15 +141,15 @@ class SearchedWork(Work):
         self.image = None
         self.desc = None
         self.work_type = data["name_show_im"]
-        self.work_name = data["rusname"]
+        self.work_name = data["rusname"] if data.get('rusname') else data['name']
         self.rating = data["rating"][0]
 
     def show(self):
         """
         Used for console printing
         """
-        print(f'{self.work_type} {self.work_name}, автор {self.author}')
-        print('Рейтинг - {:.2f}'.format(self.rating))
+        print(f'{self.work_type.capitalize()} {self.work_name}, автор {self.author}')
+        print('Рейтинг - {:.2f}'.format(self.rating), f"id: {self.id}")
 
 
 class ExtendedWork(Work):
@@ -278,6 +329,16 @@ class FantlabApi:
             raise Exception(f"Failed to get work from Fantlab. Status code: {response.status_code}")
 
     @handle_errors
+    def search_work(self, query):
+        if not query:
+            return None
+        response = requests.get(f"{self.address}/search-works?q={query}&page=1&onlymatches=1")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get work from Fantlab. Status code: {response.status_code}")
+
+    @handle_errors
     async def get_random_work(self, image_on=False):
         while True:
             idx = random.randint(1, 1800000)
@@ -333,6 +394,10 @@ class BookDatabase:
         self.data = self.database_client.search_main(query)
         return Search(query, self.data)
 
+    async def search_work(self, query):
+        self.data = self.database_client.search_work(query)
+        return SearchWork(query, self.data)
+
     async def get_random_work(self, image_on=False):
         work = await self.database_client.get_random_work(image_on)
         return work
@@ -359,6 +424,20 @@ class Search:
         """
         if self.search_result:
             return [SearchedWork(book) for book in self.search_result[1]['matches']]
+        return []
+
+
+class SearchWork:
+    def __init__(self, query, search_result):
+        self.query = query
+        self.search_result = search_result
+
+    def book_list(self):
+        """
+        Returns the list of book dicts in own format
+        """
+        if self.search_result:
+            return [SearchedWork(book) for book in self.search_result]
         return []
 
 
@@ -448,7 +527,7 @@ async def checker(chat_id=163905035):
         print(datetime.datetime.now().isoformat())
         # 3159 no genres
         # 4698 no work
-        for idx in range(34000, 36000):
+        for idx in range(50298, 51000):
             try:
                 work = await service.get_work(idx)
                 if work:
@@ -509,13 +588,22 @@ async def checker(chat_id=163905035):
         print(datetime.datetime.now().isoformat())
 
 
+async def search_the_work(query):
+    books = await service.search_work(query)
+    if books.book_list():
+        for idx, book in enumerate(books.book_list()):
+            print(idx+1)
+            book.show()
+    else:
+        print('Nothing found')
+
+
 if __name__ == '__main__':
     # Initialize the Fantlab_api with the base URL
     api_connect = FantlabApi()
+
     # Initialize DatabaseConnector with the Fantlabapiclient
     service = BookDatabase(api_connect)
-
-    # update_similars()
 
     fant_ext = database_work.DatabaseConnector('fantlab', True)
 
@@ -524,10 +612,9 @@ if __name__ == '__main__':
     # Interactor with the fantlab database, main class for requests
     fant_int = database_work.FantInteractor(fant_ext)
 
-    # asyncio.run(checker())
-    # asyncio.run(similars())
-    # asyncio.run(book_list())
-    asyncio.run(checker())
 
-    # # print(work.get_characteristics())
-    # work.print_characteristics()
+    # populate the works DB, active
+    # asyncio.run(checker())
+
+    # test the work search
+    asyncio.run(search_the_work('берн игры'))
