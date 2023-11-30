@@ -1,4 +1,4 @@
-# version 0.1.0, added the recommendations
+# version 0.1.1, added the recommendations and search
 import json
 import random
 
@@ -1297,8 +1297,4 @@ if __name__ == '__main__':
 
 # TODO Add the system message as a role setting
 
-# TODO Integration with fantlab - title, description and so on
-
-# TODO Show the similars from Fantlab
-
-# TODO Add recomendations and ask for like|dislike, then tune the model on the results
+# TODO Add recommendations and ask for like|dislike, then tune the model on the results
