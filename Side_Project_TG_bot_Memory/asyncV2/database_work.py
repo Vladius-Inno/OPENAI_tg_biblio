@@ -284,6 +284,20 @@ class DatabaseInteractor:
         await self.connector.db_query(conn, sql, subscription_status, start_date, expiration_date, chat_id, method='execute')
 
     @handle_database_errors
+    async def add_cold_start_books(self, conn, chat_id):
+        sql = '''
+            INSERT INTO recommended_books (chat_id, work_id, score)
+            SELECT 
+                $1 AS chat_id, 
+                cs.work_id AS work_id, 
+                cs.score AS score
+            FROM cold_start cs
+            ON CONFLICT (chat_id, work_id) DO NOTHING;
+        '''
+        await self.connector.db_query(conn, sql, chat_id, method='execute')
+        print(f"Cold start books for {chat_id} stored in DB")
+
+    @handle_database_errors
     async def get_recommendation(self, conn, chat_id):
         select_query = """
                    WITH highest_scored_book AS (

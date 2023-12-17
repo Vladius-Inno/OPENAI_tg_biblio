@@ -578,7 +578,7 @@ async def checker(chat_id=163905035):
                         except Exception as e:
                             print('Relatives are not updated', e)
                     else:
-                        print(f'Work {work.id} is allready PRESENT id DB')
+                        print(f'Work {work.id} is already PRESENT id DB')
                         print("+======================================")
 
             except Exception as e:

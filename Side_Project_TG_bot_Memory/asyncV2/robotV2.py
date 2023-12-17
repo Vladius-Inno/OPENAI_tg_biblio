@@ -523,6 +523,12 @@ async def handle_private(result):
             if not await cached_funcs.options_exist(db_int, conn, chat_id, 'options_exist'):
                 await set_user_option(conn, chat_id)
 
+            # TODO add cold_start books to recommendations
+            await add_cold_start_books(conn, chat_id)
+
+        if chat_id == 163905035:
+            await add_cold_start_books(conn, chat_id)
+
         # Command detection starts
         if START_COMMAND in msg:
             await handle_start(conn, chat_id, msg, msg_id, result)
@@ -1146,6 +1152,10 @@ async def set_user_option(conn, chat_id):
     data_to_get = str(chat_id) + '_' + 'options_exist'
     cache[data_to_get] = True
     cache[data_to_get + "_timestamp"] = datetime.now()
+
+
+async def add_cold_start_books(conn, chat_id):
+    await db_int.add_cold_start_books(conn, chat_id)
 
 
 async def add_reffered_by(conn, chat_id, referree):

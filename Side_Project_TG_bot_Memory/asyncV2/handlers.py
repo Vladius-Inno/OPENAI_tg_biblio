@@ -125,7 +125,7 @@ class Handler:
         # api_connect = fantlab.FantlabApi()
         # # Initialize Service A with the ServiceBClient
         # service = fantlab.BookDatabase(api_connect)
-        message = f"Поставьте оценки нескольким случайным книгам, и мы сможем начать подбирать для вас рекомендации. Найти нужную книгу можно отправив сообшение, начианающееся с 'найдиэ"
+        message = f"Поставьте оценки нескольким случайным книгам, и мы сможем начать подбирать для вас рекомендации. Найти нужную книгу можно отправив сообшение, начианающееся с 'найди'"
         await self.telegram_ext.send_text(message, chat_id, None, markup)
 
     async def help_command(self, chat_id):
