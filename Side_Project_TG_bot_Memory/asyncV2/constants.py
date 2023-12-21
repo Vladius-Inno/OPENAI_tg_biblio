@@ -43,7 +43,7 @@ OPTIONS_DATABASE = 'options.db'
 TIME_DELTA = timedelta(hours=12)
 cache_dir = os.environ.get("CACHE_DIR", "default_cache_dir")
 
-WAIT_MESSAGES = ['Один момент!..', 'Так, думаю...', 'Капельку подождите', 'Надобно произвести расчёт']
+WAIT_MESSAGES = ['Один момент!..', 'Достаю книгу...', 'Капельку подождите...', 'Подбираю произведение...']
 
 # SBER_TOKEN_TEST = "401643678:TEST:266f8c81-0fc1-46ac-b57f-64a5fcc97616"
 # Номер карты	2200 0000 0000 0053

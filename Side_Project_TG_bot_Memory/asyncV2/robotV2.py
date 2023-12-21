@@ -261,9 +261,9 @@ async def set_keyboard_roles(conn, chat_id):
 def set_keyboard_rate_work(work_id, relatives_mode='off'):
     keyboard = {
         'inline_keyboard': [[
-            {'text': "Like", 'callback_data': f'LIKE {work_id}'},  # Button with link to the channel
-            {'text': "Dislike", 'callback_data': f'DISLIKE {work_id}'},
-            {'text': "Rate", 'callback_data': f'RATE {work_id}'}
+            {'text': "👍", 'callback_data': f'LIKE {work_id}'},  # Button with link to the channel
+            {'text': "👎", 'callback_data': f'DISLIKE {work_id}'},
+            {'text': "Оценить", 'callback_data': f'RATE {work_id}'}
         ],
             [
                 {'text': "Связи", 'callback_data': f'RELATIVES {work_id}'}
@@ -791,7 +791,7 @@ async def like(conn, chat_id, work_id, msg_id, inline_markup):
 
     # change the inline-keyboard
     keyboard = inline_markup
-    keyboard['inline_keyboard'][0][0] = {'text': "Unlike", 'callback_data': f'UNLIKE {work_id}'}
+    keyboard['inline_keyboard'][0][0] = {'text': "Отменить 👍", 'callback_data': f'UNLIKE {work_id}'}
     keyboard['inline_keyboard'][0].pop(1)
 
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
@@ -806,8 +806,8 @@ async def unlike(conn, chat_id, work_id, msg_id, inline_markup):
 
     # change the inline-keyboard
     keyboard = inline_markup
-    keyboard['inline_keyboard'][0][0] = {'text': "Like", 'callback_data': f'LIKE {work_id}'}
-    keyboard['inline_keyboard'][0].insert(1, {'text': "Dislike", 'callback_data': f'DISLIKE {work_id}'})
+    keyboard['inline_keyboard'][0][0] = {'text': "👍", 'callback_data': f'LIKE {work_id}'}
+    keyboard['inline_keyboard'][0].insert(1, {'text': "👎", 'callback_data': f'DISLIKE {work_id}'})
 
     # change the inline-keyboard
     # keyboard = set_keyboard_rate_work(work_id)
@@ -823,9 +823,9 @@ async def unrate(conn, chat_id, work_id, msg_id, inline_markup):
     # change the inline-keyboard
     keyboard = {
         'inline_keyboard': [[
-            {'text': "Like", 'callback_data': f'LIKE {work_id}'},  # Button with link to the channel
-            {'text': "Dislike", 'callback_data': f'DISLIKE {work_id}'},
-            {'text': "Rate", 'callback_data': f'RATE {work_id}'}
+            {'text': "👍", 'callback_data': f'LIKE {work_id}'},  # Button with link to the channel
+            {'text': "👎", 'callback_data': f'DISLIKE {work_id}'},
+            {'text': "Оценить", 'callback_data': f'RATE {work_id}'}
         ]]}
 
     # keyboard['inline_keyboard'][0][0] = {'text': "Like", 'callback_data': f'LIKE {work_id}'}
@@ -849,8 +849,8 @@ async def undislike(conn, chat_id, work_id, msg_id, inline_markup):
 
     # change the inline-keyboard
     keyboard = inline_markup
-    keyboard['inline_keyboard'][0][0] = {'text': "Like", 'callback_data': f'LIKE {work_id}'}
-    keyboard['inline_keyboard'][0].insert(1, {'text': "Dislike", 'callback_data': f'DISLIKE {work_id}'})
+    keyboard['inline_keyboard'][0][0] = {'text': "👍", 'callback_data': f'LIKE {work_id}'}
+    keyboard['inline_keyboard'][0].insert(1, {'text': "👎", 'callback_data': f'DISLIKE {work_id}'})
 
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
 
@@ -871,7 +871,7 @@ async def dislike(conn, chat_id, work_id, msg_id, inline_markup):
 
     # change the inline-keyboard
     keyboard = inline_markup
-    keyboard['inline_keyboard'][0][0] = {'text': "Undislike", 'callback_data': f'UNDISLIKE {work_id}'}
+    keyboard['inline_keyboard'][0][0] = {'text': "Отменить 👎", 'callback_data': f'UNDISLIKE {work_id}'}
     keyboard['inline_keyboard'][0].pop(1)
 
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
@@ -896,7 +896,7 @@ async def rate(conn, chat_id, work_id, msg_id, inline_markup):
             {'text': "9", 'callback_data': f'{RATE_9} {work_id}'},
             {'text': "10", 'callback_data': f'{RATE_10} {work_id}'}
         ],
-            [{'text': "Don't rate", 'callback_data': f'{DONT_RATE} {work_id}'}]
+            [{'text': "Не оценивать", 'callback_data': f'{DONT_RATE} {work_id}'}]
 
         ]
     }
@@ -916,9 +916,9 @@ async def dont_rate(conn, chat_id, work_id, msg_id, inline_markup):
 
     keyboard = {
         'inline_keyboard': [[
-            {'text': "Like", 'callback_data': f'LIKE {work_id}'},  # Button with link to the channel
-            {'text': "Dislike", 'callback_data': f'DISLIKE {work_id}'},
-            {'text': "Rate", 'callback_data': f'RATE {work_id}'}
+            {'text': "👍", 'callback_data': f'LIKE {work_id}'},  # Button with link to the channel
+            {'text': "👎", 'callback_data': f'DISLIKE {work_id}'},
+            {'text': "Оценить", 'callback_data': f'RATE {work_id}'}
         ]]}
 
     for line in inline_markup['inline_keyboard'][1:]:
@@ -937,13 +937,13 @@ async def rate_digit(conn, chat_id, work_id, msg_id, rate_string, inline_markup)
     # asyncio.create_task(update_user_prefs(chat_id, work_id, 'rate', rate_digit))
     await update_user_prefs(chat_id, work_id, 'rate', rate_digit)
 
-    text = f"Rated {rate_digit}. Change?"
+    text = f"Оценка {rate_digit}. Изменить?"
 
     # change the inline-keyboard
     keyboard = {
         'inline_keyboard': [[
             {'text': text, 'callback_data': f'{UNRATE} {work_id}'},
-            {'text': "Smth else", 'callback_data': f'SMTH {work_id}'}
+            # {'text': "Smth else", 'callback_data': f'SMTH {work_id}'}
         ]]
     }
 
