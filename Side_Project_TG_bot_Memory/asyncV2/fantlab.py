@@ -288,7 +288,8 @@ class FantlabApi:
     def __init__(self, address=FANTLAB_API_ADDRESS):
         self.address = address or FANTLAB_API_ADDRESS
 
-    @handle_errors
+    # @handle_errors
+    @retry(attempts=10)
     async def get_work(self, work_id):
         if not work_id:
             return None
@@ -373,6 +374,7 @@ class BookDatabase:
     def __init__(self, database_client):
         self.database_client = database_client
         self.data = None
+
 
     async def get_work(self, work_id):
         data = await self.database_client.get_work(work_id)
@@ -605,7 +607,7 @@ if __name__ == '__main__':
     # Initialize DatabaseConnector with the Fantlabapiclient
     service = BookDatabase(api_connect)
 
-    fant_ext = database_work.DatabaseConnector('fantlab', True)
+    fant_ext = database_work.DatabaseConnector('bot_db', True)
 
     connector = database_work.DatabaseInteractor(fant_ext)
 

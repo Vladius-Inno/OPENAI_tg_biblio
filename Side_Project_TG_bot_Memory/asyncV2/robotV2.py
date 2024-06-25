@@ -14,7 +14,6 @@ from group_handle import handle_supergroup
 from fant_random_simple import random_parsed
 import cached_funcs
 from cached_funcs import cache
-from telegram_bot_pagination import InlineKeyboardPaginator, InlineKeyboardButton
 from constants import BOT_TOKEN, BOT_NAME, FILENAME, RATE_1, RATE_2, RATE_3, RATE_4, RATE_5, RATE_6, RATE_7, RATE_8, \
     RATE_9, RATE_10, DONT_RATE, RATES, UNLIKE, UNDISLIKE, UNRATE, \
     CLEAR_COMMAND, START_COMMAND, INFO_COMMAND, REFERRAL_COMMAND, HELP_COMMAND, RECOM_COMMAND, \
@@ -32,7 +31,7 @@ if sys.stderr.encoding != 'utf-8':
     sys.stderr = open(sys.stderr.fileno(), mode='w', encoding='utf-8', buffering=1)
 
 # new connectors
-connector = database_work.DatabaseConnector('fantlab', test=TEST)
+connector = database_work.DatabaseConnector('bot_db', test=TEST)
 
 # interactor for the database tables
 
@@ -492,6 +491,18 @@ async def parse_updates(result, last_update_json):
         except Exception as e:
             print('Messages NOT from a bot BUG', e)
 
+    else:
+        # In case the number in updates is lower than in cache
+        last_update = str(int(result['update_id']))
+        last_update_new['last_update'] = last_update
+        print('fixing the cache update number with', last_update)
+        try:
+            last_update_new['time'] = datetime.timestamp(datetime.now())
+            cache['update'] = last_update_new
+            print("Wrote the update to cache", last_update_new)
+        except Exception as e:
+            print('Could not write upadate data to cache', e)
+        return 'Done'
     return
 
 
@@ -526,8 +537,8 @@ async def handle_private(result):
             # TODO add cold_start books to recommendations
             await add_cold_start_books(conn, chat_id)
 
-        if chat_id == 163905035:
-            await add_cold_start_books(conn, chat_id)
+        # if chat_id == 163905035:
+        #     await add_cold_start_books(conn, chat_id)
 
         # Command detection starts
         if START_COMMAND in msg:
@@ -1228,11 +1239,21 @@ async def main():
     if not cache.get('extras'):
         cache['extras'] = {}
     if not cache.get('update'):
-        cache['update'] = {"last_update": "32982589", "extras": []}
+        cache['update'] = {"last_update": "32989405", "extras": []}
     while True:
         try:
             # read the last update id parsed from the file
+
+            #
+            # print('Initing the cache update number')
+            # try:
+            #     cache['update'] = cache['update'] = {"last_update": "32989405", "extras": []}
+            #     print("Wrote the update to cache")
+            # except Exception as e:
+            #     print('Could not write upadate data to cache', e)
+
             last_update = read_update()
+            # last_update = {"last_update": "32989405", "extras": []}
             print('The last update in the file:', last_update)
 
             # get updates for the bot from telegram

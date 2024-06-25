@@ -677,7 +677,7 @@ def update_similars():
     # Connect to the PostgreSQL database
     with psycopg2.connect(
             host=host_name,
-            database="fantlab",
+            database="bot_db",
             user=user_name,
             password=password
     ) as conn:
@@ -743,7 +743,7 @@ if __name__ == '__main__':
     # opt_ext = OptionsInteractor(cursor, mess_db.connection, test=True)
 
     # Connector to the fantlab database
-    fant_db = DatabaseConnector('fantlab', True)
+    fant_db = DatabaseConnector('bot_db', True)
     # update_similars()
 
     connector = DatabaseInteractor(fant_db)
