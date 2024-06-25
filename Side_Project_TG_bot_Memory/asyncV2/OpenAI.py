@@ -36,6 +36,7 @@ async def openAI(prompt, max_tokens, messages, gpt_role):
     final_result = ''
     for i in range(0, len(result['choices'])):
         final_result += result['choices'][i]['message']['content']
+    print('Final result:', final_result)
     return final_result
 
 
