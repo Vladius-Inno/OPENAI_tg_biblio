@@ -673,7 +673,11 @@ async def handle_private(result):
                 gpt_role = await db_int.check_role(conn, chat_id)
                 try:
                     bot_response = await openAI(f"{prompt}", MAX_TOKENS, messages, gpt_role)
-                    await add_private_message_to_db(conn, chat_id, bot_response, 'assistant', is_subscription_valid)
+                    try:
+                        await add_private_message_to_db(conn, chat_id, bot_response, 'assistant', is_subscription_valid)
+                    except Exception as e:
+                        print('Couldnt add the private message to db', e)
+
                 except requests.exceptions.RequestException as e:
                     print("Error while waiting for the answer from OpenAI", e)
                     bot_response = None
