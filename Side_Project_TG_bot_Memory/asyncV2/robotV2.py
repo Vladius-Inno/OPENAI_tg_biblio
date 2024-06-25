@@ -1301,8 +1301,10 @@ async def main():
             # iterate on the list of updates
             for res in result:
                 asyncio.create_task(parse_updates(res, last_update))
-
-            await asyncio.sleep(DELAY_SLEEP)
+            try:
+                await asyncio.sleep(DELAY_SLEEP)
+            except Exception as e:
+                print('SLEEP problem', e)
 
         except TypeError as e:
             print('Typeerror', e)
