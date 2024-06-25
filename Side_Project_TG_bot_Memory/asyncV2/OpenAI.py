@@ -34,7 +34,8 @@ async def openAI(prompt, max_tokens, messages, gpt_role):
         )
     except Exception as e:
         print('OpenAi request failed', e)
-    response.raise_for_status()  # Raises an exception for non-2xx status codes
+    print("The response:", response)
+    # response.raise_for_status()  # Raises an exception for non-2xx status codes
     result = response.json()
     final_result = ''
     print('First Final result:', final_result)
