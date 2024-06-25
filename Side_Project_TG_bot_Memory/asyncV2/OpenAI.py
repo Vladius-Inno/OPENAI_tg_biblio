@@ -24,16 +24,20 @@ async def openAI(prompt, max_tokens, messages, gpt_role):
 
     messages.append({"role": "user", "content": prompt})
     print("openAI sending request", prompt)
-    response = requests.post(
-        'https://api.openai.com/v1/chat/completions',
-        headers={'Authorization': f'Bearer {API_KEY}'},
-        json={'model': MODEL, 'messages': messages,
-              'temperature': 0.8, 'max_tokens': max_tokens},
-        timeout=30
-    )
+    try:
+        response = requests.post(
+            'https://api.openai.com/v1/chat/completions',
+            headers={'Authorization': f'Bearer {API_KEY}'},
+            json={'model': MODEL, 'messages': messages,
+                  'temperature': 0.8, 'max_tokens': max_tokens},
+            timeout=30
+        )
+    except Exception as e:
+        print('OpenAi request failed', e)
     response.raise_for_status()  # Raises an exception for non-2xx status codes
     result = response.json()
     final_result = ''
+    print('First Final result:', final_result)
     for i in range(0, len(result['choices'])):
         final_result += result['choices'][i]['message']['content']
     print('Final result:', final_result)
