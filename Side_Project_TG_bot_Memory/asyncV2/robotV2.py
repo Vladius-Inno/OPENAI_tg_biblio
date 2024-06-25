@@ -477,15 +477,24 @@ async def parse_updates(result, last_update_json):
                 # remember the last update number
                 last_update = str(int(result['update_id']))
                 last_update_new['last_update'] = last_update
-                await write_update(last_update_new)
+                try:
+                    await write_update(last_update_new)
+                except Exception as e:
+                    print('write update in checking messages from bot', e)
 
                 chat_type = str(result['message']['chat']['type'])
                 # check if it's a group
                 if chat_type == 'supergroup':
-                    await handle_supergroup(result, telegram)
+                    try:
+                        await handle_supergroup(result, telegram)
+                    except Exception as e:
+                        print('handle supergroup error', e)
                 # check if it's a private chat
                 if chat_type == 'private':
-                    await handle_private(result)
+                    try:
+                        await handle_private(result)
+                    except Exception as e:
+                        print('handle private error', e)
                 if chat_type == "channel":
                     pass
         except Exception as e:
