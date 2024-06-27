@@ -985,8 +985,9 @@ async def rate_digit(conn, chat_id, work_id, msg_id, rate_string, inline_markup)
 async def relatives(conn, chat_id, work_id, msg_id, inline_markup):
     print(f'{chat_id} wants to see relatives of {work_id}')
     work_ext = await service.get_extended_work(work_id)
-
+    print('got the ext work')
     parents = await work_ext.get_parents()
+    print('got the ext work parents')
     parent_text = ''
     parent_callbacks = [[]]
     if parents['cycles']:
@@ -994,6 +995,7 @@ async def relatives(conn, chat_id, work_id, msg_id, inline_markup):
         for x, parent_cycle in enumerate(parents['cycles']):
             for y, parent in enumerate(parent_cycle):
                 if parent:
+                    counter = 0
                     work_type_text = f"{parent['work_type']}" if parent['work_type'] else ""
                     work_name_text = f" '{parent['work_name']}'" if parent['work_name'] else ""
                     work_author_text = f", {parent['author']}" if parent['author'] else ""
@@ -1004,14 +1006,16 @@ async def relatives(conn, chat_id, work_id, msg_id, inline_markup):
                                    f'{work_author_text}{work_rating_text}\n'
 
                     # make the rows for the inline keyboard, 8 in a row
-                    if x % 8 == 0:
+                    if counter % 8 == 0:
                         parent_callbacks.append([])
-                    parent_callbacks[x // 8].append(
+                    parent_callbacks[counter // 8].append(
                         {'text': f'{x + 1}.{y + 1}', 'callback_data': f'TRANSIT {work_work_id}'})
 
         parent_keyboard_markup = {'inline_keyboard': [el for el in parent_callbacks]}
+    print('worked with parents')
 
     children = await work_ext.get_children()
+    print('got the ext work children')
     children_text = ''
     children_callbacks = [[]]
     counter = 0
@@ -1029,10 +1033,13 @@ async def relatives(conn, chat_id, work_id, msg_id, inline_markup):
                 children_text += f'{x + 1}. {work_type_text.capitalize()}{work_name_text}' \
                                  f'{work_author_text}{work_rating_text}\n'
                 # make the rows for the inline keyboard, 8 in a row
-                if x % 8 == 0:
+                print(children_text)
+                if counter % 8 == 0:
                     children_callbacks.append([])
-                children_callbacks[x // 8].append(
+                    print('appended the empty list')
+                children_callbacks[counter // 8].append(
                     {'text': f'{x + 1}.', 'callback_data': f'TRANSIT {work_work_id}'})
+                # print(children_callbacks)
                 # limit the amount of buttons and children
                 if counter > 47:
                     children_text += '\nСлишком много позиций, выведен неполный список!'
@@ -1042,6 +1049,7 @@ async def relatives(conn, chat_id, work_id, msg_id, inline_markup):
         children_keyboard_markup = {'inline_keyboard': [el for el in children_callbacks]}
         if children_text == "\n\nВ произведение входят:\n\n":
             children_text = ""
+    print('worked with children')
 
     keyboard = inline_markup
     for line in inline_markup['inline_keyboard'][1:]:
