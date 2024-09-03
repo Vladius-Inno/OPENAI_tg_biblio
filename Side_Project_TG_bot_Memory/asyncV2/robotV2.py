@@ -15,7 +15,7 @@ from fant_random_simple import random_parsed
 import cached_funcs
 from cached_funcs import cache
 from constants import BOT_TOKEN, BOT_NAME, FILENAME, RATE_1, RATE_2, RATE_3, RATE_4, RATE_5, RATE_6, RATE_7, RATE_8, \
-    RATE_9, RATE_10, DONT_RATE, RATES, UNLIKE, UNDISLIKE, UNRATE, \
+    RATE_9, RATE_10, DONT_RATE, RATES, UNLIKE, UNDISLIKE, UNRATE, TO_READ, \
     CLEAR_COMMAND, START_COMMAND, INFO_COMMAND, REFERRAL_COMMAND, HELP_COMMAND, RECOM_COMMAND, \
     SUBSCRIPTION_COMMAND, CHANNEL_NAME, CHANNEL_NAME_RUS, TEST, DAY_LIMIT_PRIVATE, DAY_LIMIT_SUBSCRIPTION, \
     CONTEXT_DEPTH, MAX_TOKENS, REFERRAL_BONUS, MONTH_SUBSCRIPTION_PRICE, CHECK_MARK, LITERATURE_EXPERT_ROLE, \
@@ -262,7 +262,8 @@ def set_keyboard_rate_work(work_id, relatives_mode='off'):
         'inline_keyboard': [[
             {'text': "👍", 'callback_data': f'LIKE {work_id}'},  # Button with link to the channel
             {'text': "👎", 'callback_data': f'DISLIKE {work_id}'},
-            {'text': "Оценить", 'callback_data': f'RATE {work_id}'}
+            {'text': "Оценить", 'callback_data': f'RATE {work_id}'},
+            {'text': "Читать!", 'callback_data': f'TO_READ {work_id}'},
         ],
             [
                 {'text': "Связи", 'callback_data': f'RELATIVES {work_id}'}
@@ -797,7 +798,19 @@ async def handle_callback_query(callback_query, last_update, last_update_new):
                 # cache['extras'][str(chat_id)] = {'what': 'transit', 'work_id': int(work_to_handle)}
                 # await run_next_write(run_next, last_update_new)
                 await write_update(last_update_new)
-
+            if call_action == TO_READ:
+                print('User wants ti read', work_to_handle)
+                # check if the interaction is with the last card in the chat
+                if cache[data_to_get]['work_id'] == int(work_to_handle):
+                    # put into run_next the order to run next for chat_id and the type of next card
+                    # run_next = {'chat_id': str(chat_id), 'what': 'run_next', 'type': cache[data_to_get]['show_type']}
+                    temp = cache['extras']
+                    temp.update({str(chat_id): {'what': 'run_next', 'type': cache[data_to_get]['show_type']}})
+                    cache['extras'] = temp
+                    print('Wrote extras to cache', cache['extras'])
+                    # await run_next_write(run_next, last_update_new)
+                await write_update(last_update_new)
+                await to_read(conn, chat_id, int(work_to_handle), msg_id, inline_markup)
         return
 
 
@@ -805,8 +818,10 @@ async def update_user_prefs(chat_id, work_id, pref, rate_digit=None):
     async with await connector._get_user_connection(chat_id) as conn:
         # print('The prefs connection is', conn)
         await fant_ext.update_user_prefs(conn, chat_id, work_id, pref, rate_digit)
+        print('updated user prefs')
         # if pref in ['like', 'rate', 'dislike', ]:
         await fant_ext.update_recommendations(conn, chat_id, work_id, pref, rate_digit)
+        print('updated the recommendations')
 
 
 async def like(conn, chat_id, work_id, msg_id, inline_markup):
@@ -962,6 +977,7 @@ async def rate_digit(conn, chat_id, work_id, msg_id, rate_string, inline_markup)
     print(f'{chat_id} rates {work_id} as {rate_digit}')
     # asyncio.create_task(update_user_prefs(chat_id, work_id, 'rate', rate_digit))
     await update_user_prefs(chat_id, work_id, 'rate', rate_digit)
+    print('updtated the prefs')
 
     text = f"Оценка {rate_digit}. Изменить?"
 
@@ -977,9 +993,25 @@ async def rate_digit(conn, chat_id, work_id, msg_id, rate_string, inline_markup)
         for x, element in enumerate(line):
             if element['text'] == 'Связи':
                 keyboard['inline_keyboard'].append([{'text': "Связи", 'callback_data': f'RELATIVES {work_id}'}])
+    print('constructed the keyboard')
 
     await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
+    print('sent the message')
     await db_int.update_pref_score(conn, chat_id, work_id, 'rate', rate_digit)
+    print('updated the pref score')
+
+async def to_read(conn, chat_id, work_id, msg_id, inline_markup):
+    print(chat_id, 'wants to read', work_id)
+
+    await update_user_prefs(chat_id, work_id, 'to_read')
+
+    # change the inline-keyboard
+    keyboard = inline_markup
+    keyboard['inline_keyboard'][0][3] = {'text': "Не читать", 'callback_data': f'NOT_READ {work_id}'}
+    # keyboard['inline_keyboard'][0].pop(1)
+
+    await telegram.edit_bot_message_markup(chat_id, msg_id, keyboard)
+    # await db_int.update_pref_score(conn, chat_id, work_id, 'like')
 
 
 async def relatives(conn, chat_id, work_id, msg_id, inline_markup):

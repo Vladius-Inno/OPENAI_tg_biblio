@@ -59,6 +59,7 @@ class DatabaseConnector:
 
     @handle_database_errors
     async def _create_db_pool(self):
+        print(host_name)
         self.db_pool = await asyncpg.create_pool(
             user=user_name, password=password,
             host=host_name, database=self.database,
@@ -527,7 +528,8 @@ class FantInteractor(DatabaseInteractor):
             sql = f"INSERT INTO {self.user_actions_table} (chat_id, w_id, action_type, rate) VALUES ($1, $2, $3, " \
                   f"$4) ON CONFLICT (chat_id, w_id) DO UPDATE SET action_type = $3, rate = $4 WHERE " \
                   f"({self.user_actions_table}.action_type = 'like' OR {self.user_actions_table}.action_type = " \
-                  f"'dislike' OR {self.user_actions_table}.action_type = 'no_pref') AND {self.user_actions_table}.rate IS NULL"
+                  f"'dislike' OR {self.user_actions_table}.action_type = 'no_pref' OR "\
+                  f"{self.user_actions_table}.action_type = 'to_read') AND {self.user_actions_table}.rate IS NULL"
             await self.connector.db_query(conn, sql, chat_id, work_id, pref, rate)
             print(f'User {chat_id} preference updated (rated)')
             return
