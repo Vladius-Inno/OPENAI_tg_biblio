@@ -10,6 +10,7 @@ from retrying_async import retry
 from datetime import datetime
 import fantlab, database_work, handlers, telegram_int
 from OpenAI import openAI
+from claude_ai import claude_ai
 from group_handle import handle_supergroup
 from fant_random_simple import random_parsed
 import cached_funcs
@@ -685,7 +686,8 @@ async def handle_private(result):
                 except Exception as e:
                     print('error in check_role', e)
                 try:
-                    bot_response = await openAI(f"{prompt}", MAX_TOKENS, messages, gpt_role)
+                    # bot_response = await openAI(f"{prompt}", MAX_TOKENS, messages, gpt_role)
+                    bot_response = await claude_ai(f"{prompt}", MAX_TOKENS, messages, gpt_role)
                     try:
                         await add_private_message_to_db(conn, chat_id, bot_response, 'assistant', is_subscription_valid)
                     except Exception as e:

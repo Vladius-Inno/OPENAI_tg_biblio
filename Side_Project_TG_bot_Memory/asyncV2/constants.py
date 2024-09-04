@@ -10,6 +10,8 @@ API_KEY = os.environ['API_KEY']
 # the news api key
 API_NEWS_KEY = 'b4f73a45121643eb87fe1e1a2f39c3dd'
 MODEL = 'gpt-3.5-turbo'
+MODEL_CLAUDE = "claude-3-haiku-20240307"
+
 # Telegram secret access bot token
 BOT_TOKEN = os.environ['BOT_TOKEN']
 # Specify all group ID the bot can respond too
