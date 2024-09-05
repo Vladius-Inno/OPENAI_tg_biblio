@@ -6,6 +6,10 @@ import research
 import requests
 import memory
 import re
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 # Checking for specific tone for message
@@ -29,7 +33,10 @@ async def handle_supergroup(result, telegram):
     write_history = ''
     chat_id = str(result['message']['chat']['id'])
     prompt = ""
-    if chat_id in ALLOWED_GROUP_ID:
+    # Retrieve and parse the ALLOWED_GROUP_ID environment variable
+    allowed_group_ids = os.getenv('ALLOWED_GROUP_ID', '')
+    allowed_group_ids_list = allowed_group_ids.split(',')
+    if chat_id in allowed_group_ids_list:
         msg_id = str(int(result['message']['message_id']))
         # print('In allowed group ID')
         try:
