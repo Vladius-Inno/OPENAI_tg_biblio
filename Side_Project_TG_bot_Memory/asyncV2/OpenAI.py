@@ -3,6 +3,9 @@
 import requests
 from retrying_async import retry
 from constants import LITERATURE_EXPERT_ROLE, MODEL, LIT_PROMPT, API_KEY
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 # Make the request to the OpenAI API

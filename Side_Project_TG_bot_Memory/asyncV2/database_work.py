@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
 
+from dotenv import load_dotenv
 import asyncpg
 import os
 import json
 import asyncio
 # for checking
 import fantlab
+
+load_dotenv()
+
 
 host_name = os.environ['host_name']
 user_name = os.environ['user_name']

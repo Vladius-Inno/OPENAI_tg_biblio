@@ -1,7 +1,7 @@
 # version 0.1.1, added the recommendations and search
 import json
 import random
-
+from dotenv import load_dotenv
 import requests
 import sys
 import asyncio

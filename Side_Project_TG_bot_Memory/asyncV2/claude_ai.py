@@ -4,6 +4,11 @@ from retrying_async import retry
 import anthropic
 import os
 from constants import LITERATURE_EXPERT_ROLE, MODEL_CLAUDE, LIT_PROMPT, API_KEY
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
 
 client = anthropic.AsyncAnthropic(
     # This is the default and can be omitted

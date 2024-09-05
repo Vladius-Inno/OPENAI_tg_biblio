@@ -8,6 +8,12 @@ import database_work
 from retrying_async import retry
 import datetime
 
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
+
 FANTLAB_API_ADDRESS = 'https://api.fantlab.ru/'
 FANTLAB_ADDRESS = 'https://fantlab.ru'
 

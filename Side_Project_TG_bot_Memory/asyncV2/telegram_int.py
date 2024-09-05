@@ -6,6 +6,12 @@ from retrying_async import retry
 from constants import MONTH_SUBSCRIPTION_PRICE, DAY_LIMIT_SUBSCRIPTION, PAY_TOKEN_TEST, PAY_TOKEN
 from datetime import datetime, timedelta
 
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
+
 
 def handle_telegram_errors(func):
     def wrapper(*args, **kwargs):
