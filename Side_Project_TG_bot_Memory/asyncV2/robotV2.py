@@ -671,7 +671,7 @@ async def handle_private(result):
                 # send the last message and the previous historical messages from the db to the GPT
                 prompt = msg
                 # send the quick message to the user, which shows that we start thinking, get the sent message id
-                x = await telegram.send_text("⏳ Ожидайте ответа от бота...", chat_id, msg_id)
+                x = await telegram.send_text("⏳ Временно не работаю с текстовыми запросами... (кроме 'Найди')", chat_id, msg_id)
                 sent_msg_id = x['result']['message_id']
 
                 # set the typing status

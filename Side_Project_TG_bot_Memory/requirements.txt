@@ -13,3 +13,7 @@ bs4~=0.0.1
 beautifulsoup4~=4.12.2
 retrying-async
 python-dotenv
+matplotlib
+plotly
+scipy
+scikit-learn
